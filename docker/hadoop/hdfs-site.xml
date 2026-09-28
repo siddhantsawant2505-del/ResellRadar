@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<!--
+  ResellRadar single-node pseudo-distributed HDFS (Person 1, real HDFS ingestion).
+  Team contract: replication factor = 1, block size = 64 MB (67,108,864 bytes).
+  Storage dirs pinned to the mounted volumes (never /tmp, which resets on restart).
+  Permissions disabled: single-user mini-project cluster (no Kerberos/user mapping).
+-->
+<configuration>
+  <property>
+    <name>dfs.replication</name>
+    <value>1</value>
+  </property>
+  <property>
+    <name>dfs.blocksize</name>
+    <value>67108864</value>
+  </property>
+  <property>
+    <name>dfs.namenode.name.dir</name>
+    <value>file:///hadoop/dfs/name</value>
+  </property>
+  <property>
+    <name>dfs.datanode.data.dir</name>
+    <value>file:///hadoop/dfs/data</value>
+  </property>
+  <property>
+    <name>dfs.permissions.enabled</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>dfs.namenode.datanode.registration.ip-hostname-check</name>
+    <value>false</value>
+  </property>
+</configuration>

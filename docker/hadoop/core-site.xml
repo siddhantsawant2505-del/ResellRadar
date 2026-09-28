@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!--
+  ResellRadar single-node pseudo-distributed HDFS (Person 1, real HDFS ingestion).
+  Mounted into both namenode and datanode at /opt/hadoop/etc/hadoop/.
+-->
+<configuration>
+  <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://namenode:9000</value>
+  </property>
+</configuration>
