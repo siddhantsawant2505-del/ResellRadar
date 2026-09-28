@@ -7,14 +7,19 @@ from pyspark.sql.functions import (
     array_distinct,
     row_number,
     regexp_replace,
-    lower,
     trim,
     when,
-    concat_ws
+    lag,
+    datediff,
+    first_value
 )
 from pyspark.sql.window import Window
 from pyspark.ml.feature import HashingTF, MinHashLSH
 
+
+# ============================================================
+# PATHS
+# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -28,20 +33,25 @@ OUTPUT_PATH = str(
 
 
 # ============================================================
-# 1. START SPARK
+# START SPARK
 # ============================================================
 
-spark = SparkSession.builder \
-    .appName("ResellRadar-EntityResolution") \
-    .master("local[*]") \
-    .config("spark.hadoop.io.native.lib.available", "false") \
+spark = (
+    SparkSession.builder
+    .appName("ResellRadar-EntityResolution")
+    .master("local[*]")
+    .config(
+        "spark.hadoop.io.native.lib.available",
+        "false"
+    )
     .getOrCreate()
+)
 
 spark.sparkContext.setLogLevel("ERROR")
 
 
 # ============================================================
-# 2. READ CLEAN DATA
+# READ CLEAN DATA
 # ============================================================
 
 print("Reading:")
@@ -56,32 +66,16 @@ print("Total Records:", total_records)
 
 
 # ============================================================
-# 3. GET UNIQUE TITLES
+# CREATE MODEL-AWARE KEY
 # ============================================================
 
-unique_titles = df.select(
-    "title_clean"
-).distinct()
-
-unique_count = unique_titles.count()
-
-print("Unique Titles:", unique_count)
-
-
-# ============================================================
-# 4. CREATE MODEL-AWARE KEY
-# ============================================================
-
-# Remove common listing-level attributes.
-# These should NOT define the underlying product entity.
-
-model_key_df = unique_titles.withColumn(
+df = df.withColumn(
     "model_key",
     col("title_clean")
 )
 
 # Remove storage sizes
-model_key_df = model_key_df.withColumn(
+df = df.withColumn(
     "model_key",
     regexp_replace(
         col("model_key"),
@@ -90,7 +84,7 @@ model_key_df = model_key_df.withColumn(
     )
 )
 
-model_key_df = model_key_df.withColumn(
+df = df.withColumn(
     "model_key",
     regexp_replace(
         col("model_key"),
@@ -100,7 +94,7 @@ model_key_df = model_key_df.withColumn(
 )
 
 # Remove common colors
-model_key_df = model_key_df.withColumn(
+df = df.withColumn(
     "model_key",
     regexp_replace(
         col("model_key"),
@@ -110,8 +104,8 @@ model_key_df = model_key_df.withColumn(
     )
 )
 
-# Remove condition / listing phrases
-model_key_df = model_key_df.withColumn(
+# Remove common listing / condition phrases
+df = df.withColumn(
     "model_key",
     regexp_replace(
         col("model_key"),
@@ -122,8 +116,8 @@ model_key_df = model_key_df.withColumn(
     )
 )
 
-# Clean extra spaces
-model_key_df = model_key_df.withColumn(
+# Clean spaces
+df = df.withColumn(
     "model_key",
     trim(
         regexp_replace(
@@ -136,15 +130,10 @@ model_key_df = model_key_df.withColumn(
 
 
 # ============================================================
-# 5. PROTECT MODEL DIFFERENCES
+# PROTECT PRO / PRO MAX
 # ============================================================
 
-# IMPORTANT:
-# "iPhone 15 Pro" and "iPhone 15 Pro Max" are different models.
-#
-# We explicitly preserve "pro max" as part of the model key.
-
-model_key_df = model_key_df.withColumn(
+df = df.withColumn(
     "model_key",
     when(
         col("model_key").contains("pro max"),
@@ -160,10 +149,27 @@ model_key_df = model_key_df.withColumn(
 
 
 # ============================================================
-# 6. TOKENIZE MODEL KEY
+# UNIQUE MODEL KEYS
 # ============================================================
 
-model_key_df = model_key_df.withColumn(
+unique_models = df.select(
+    "title_clean",
+    "model_key"
+).distinct()
+
+print("\n========== UNIQUE MODELS ==========")
+
+print(
+    "Unique model keys:",
+    unique_models.select("model_key").distinct().count()
+)
+
+
+# ============================================================
+# TOKENIZE
+# ============================================================
+
+model_key_df = unique_models.withColumn(
     "tokens",
     array_distinct(
         split(col("model_key"), " ")
@@ -172,7 +178,7 @@ model_key_df = model_key_df.withColumn(
 
 
 # ============================================================
-# 7. HASH TITLE TOKENS
+# HASHING
 # ============================================================
 
 hashing_tf = HashingTF(
@@ -185,7 +191,7 @@ model_key_df = hashing_tf.transform(model_key_df)
 
 
 # ============================================================
-# 8. MINHASH LSH
+# MINHASH LSH
 # ============================================================
 
 mh = MinHashLSH(
@@ -201,7 +207,7 @@ print("MinHash model created successfully.")
 
 
 # ============================================================
-# 9. FIND SIMILAR MODEL CANDIDATES
+# SIMILAR MODEL CANDIDATES
 # ============================================================
 
 pairs = model.approxSimilarityJoin(
@@ -218,10 +224,9 @@ pairs = pairs.filter(
 
 
 # ============================================================
-# 10. REMOVE FALSE MODEL MATCHES
+# PRO / PRO MAX PROTECTION
 # ============================================================
 
-# Do not connect Pro and Pro Max.
 pairs = pairs.filter(
     ~(
         col("datasetA.model_key").contains("pro ")
@@ -256,23 +261,24 @@ pairs.select(
 
 
 # ============================================================
-# 11. CREATE ENTITY ID
+# CREATE ENTITY IDS
 # ============================================================
-
-# Each unique model_key represents one underlying product model.
 
 window = Window.orderBy("model_key")
 
-model_entities = model_key_df.select(
-    "model_key"
-).distinct().withColumn(
-    "entity_id",
-    row_number().over(window)
+model_entities = (
+    model_key_df
+    .select("model_key")
+    .distinct()
+    .withColumn(
+        "entity_id",
+        row_number().over(window)
+    )
 )
 
 
 # ============================================================
-# 12. CREATE MODEL -> ENTITY MAPPING
+# MODEL -> ENTITY
 # ============================================================
 
 model_mapping = model_entities.select(
@@ -282,24 +288,29 @@ model_mapping = model_entities.select(
 
 
 # ============================================================
-# 13. MAP ENTITY IDS TO UNIQUE TITLES
+# TITLE -> ENTITY
 # ============================================================
 
-title_mapping = model_key_df.select(
-    "title_clean",
-    "model_key"
-).join(
-    model_mapping,
-    on="model_key",
-    how="left"
-).select(
-    "title_clean",
-    "entity_id"
+title_mapping = (
+    model_key_df
+    .select(
+        "title_clean",
+        "model_key"
+    )
+    .join(
+        model_mapping,
+        on="model_key",
+        how="left"
+    )
+    .select(
+        "title_clean",
+        "entity_id"
+    )
 )
 
 
 # ============================================================
-# 14. MAP ENTITY IDS BACK TO ALL LISTINGS
+# MAP ENTITIES TO LISTINGS
 # ============================================================
 
 df = df.join(
@@ -310,10 +321,123 @@ df = df.join(
 
 
 # ============================================================
-# 15. CHECK ENTITY DISTRIBUTION
+# CREATE REPOST TITLE KEY
 # ============================================================
 
-print("\n========== ENTITY RESULTS ==========")
+# Remove known repost suffixes only for repost detection.
+# Original title_clean remains unchanged.
+
+df = df.withColumn(
+    "repost_title_key",
+    regexp_replace(
+        col("title_clean"),
+        r"\s*(must go|relist)\s*$",
+        ""
+    )
+)
+
+df = df.withColumn(
+    "repost_title_key",
+    regexp_replace(
+        col("repost_title_key"),
+        r"\s*!+\s*$",
+        ""
+    )
+)
+
+df = df.withColumn(
+    "repost_title_key",
+    trim(col("repost_title_key"))
+)
+
+
+# ============================================================
+# REPOST DETECTION
+# ============================================================
+
+print("\n========== REPOST DETECTION ==========")
+
+# Repost requires:
+# - same seller
+# - same normalized / near-identical title
+# - 1 to 14 days after previous listing
+#
+# Ground truth is NOT used.
+
+repost_window = (
+    Window
+    .partitionBy(
+        "seller_id",
+        "repost_title_key"
+    )
+    .orderBy(
+        "posted_date"
+    )
+)
+
+df = df.withColumn(
+    "previous_posted_date",
+    lag("posted_date").over(repost_window)
+)
+
+df = df.withColumn(
+    "days_since_previous",
+    datediff(
+        col("posted_date"),
+        col("previous_posted_date")
+    )
+)
+
+df = df.withColumn(
+    "predicted_is_repost",
+    when(
+        col("seller_id").isNotNull()
+        &
+        col("posted_date").isNotNull()
+        &
+        col("previous_posted_date").isNotNull()
+        &
+        (col("days_since_previous") >= 1)
+        &
+        (col("days_since_previous") <= 14),
+        1
+    ).otherwise(0)
+)
+
+
+# ============================================================
+# ORIGINAL LISTING
+# ============================================================
+
+original_window = (
+    Window
+    .partitionBy(
+        "seller_id",
+        "repost_title_key"
+    )
+    .orderBy(
+        "posted_date"
+    )
+)
+
+df = df.withColumn(
+    "predicted_original_listing_id",
+    first_value("listing_id").over(
+        original_window
+    )
+)
+
+
+# ============================================================
+# RESULTS
+# ============================================================
+
+print(
+    "Detected reposts:",
+    df.filter(
+        col("predicted_is_repost") == 1
+    ).count()
+)
 
 print(
     "Unique Entities:",
@@ -322,40 +446,46 @@ print(
 
 print(
     "Listings with Entity ID:",
-    df.filter(col("entity_id").isNotNull()).count()
+    df.filter(
+        col("entity_id").isNotNull()
+    ).count()
 )
 
 
 # ============================================================
-# 16. SAVE OUTPUT
+# REMOVE TEMPORARY COLUMNS
+# ============================================================
+
+df = df.drop(
+    "model_key",
+    "repost_title_key",
+    "previous_posted_date",
+    "days_since_previous"
+)
+
+
+# ============================================================
+# SAVE OUTPUT
 # ============================================================
 
 print("\n========== SAVING OUTPUT ==========")
 
-df.select(
-    "listing_id",
-    "title",
-    "description",
-    "price",
-    "currency",
-    "category",
-    "sub_category",
-    "location_city",
-    "location_region",
-    "posted_date",
-    "delisted_date",
-    "seller_type",
-    "source_platform",
-    "scraped_at",
-    "entity_id"
-).write.mode("overwrite").parquet(
+df.write.mode(
+    "overwrite"
+).parquet(
     OUTPUT_PATH
 )
 
 
 print("\nSUCCESS!")
-print("Entity-resolved dataset saved to:")
-print(OUTPUT_PATH)
+
+print(
+    "Entity-resolved dataset saved to:"
+)
+
+print(
+    OUTPUT_PATH
+)
 
 
 spark.stop()
