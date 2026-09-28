@@ -1,143 +1,389 @@
-# ResellRadar — Big Data Processing Pipeline (Person 2)
+# ResellRadar — Person 2: Big Data Processing
 
-**ResellRadar** is a Big Data Analytics mini-project featuring a distributed data pipeline that mines second-hand marketplace listings (Mobile Phones and Furniture) to compute product depreciation curves, resale velocity, and regional price arbitrage opportunities.
+## Role
 
-This document covers **Person 2's Role: Big Data Processing Engineer (Core BDA component)**. Person 2 owns the Spark cleaning, entity resolution, and feature engineering stages, taking raw listings from Person 1's ingestion layer (`data/raw/`) and producing canonicalized, deduplicated datasets plus aggregated analytics tables for Person 3's graph/visualization layer (`data/curated/`).
+**Person 2 — Big Data Processing Engineer**
 
----
-
-## 👤 Role Ownership
-
-| Area | Ownership |
-| ---- | --------- |
-| Spark cleaning & normalization | ✅ Person 2 |
-| Entity resolution (MinHash LSH) | ✅ Person 2 |
-| Feature engineering (Spark SQL) | ✅ Person 2 |
-| `spark_jobs/` module | ✅ Person 2 |
-| `data/processed/` zone | ✅ Person 2 |
-| `data/curated/` zone | ✅ Person 2 |
-| Scraper / HDFS ingestion | ❌ Person 1 |
-| Graph / Streamlit dashboard | ❌ Person 3 |
+Responsible for transforming the raw ResellRadar listing data into clean, entity-resolved, and analytics-ready datasets using Apache Spark.
 
 ---
 
-## 🛠️ Tech Stack
+## Objectives
 
-- **Processing Engine**: Apache Spark via PySpark **4.2.0** (`local[*]` mode)
-- **MLlib**: `HashingTF` + `MinHashLSH` for entity resolution
-- **Window Functions & Spark SQL**: depreciation, velocity, and regional aggregations
-- **Storage Format**: Parquet (`data/processed/` and `data/curated/`)
-- **Environment**: Python 3.12.2, Java 19.0.2, Hadoop 3.5.0 Windows helper binaries (untracked)
-- Full setup instructions: [`docs/SPARK_SETUP.md`](docs/SPARK_SETUP.md)
+The Big Data Processing pipeline performs:
+
+1. Schema normalization
+2. Data cleaning and text preprocessing
+3. Duplicate handling
+4. Entity resolution
+5. Repost detection
+6. Feature engineering
+7. Generation of curated analytics datasets
 
 ---
 
-## 📁 Files Owned by Person 2 (Currently in the Codebase)
+# Pipeline
 
 ```text
-ResellRadar/
-├── spark_jobs/
-│   ├── clean_normalize.py      # Stage 1 — schema normalization & text preprocessing
-│   ├── entity_resolution.py    # Stage 2 — MinHash LSH clustering & entity IDs
-│   └── feature_engineering.py  # Stage 3 — curated analytics tables
-├── docs/
-│   └── SPARK_SETUP.md          # Environment, Java/Hadoop & run documentation
-├── data/
-│   ├── processed/              # Person 2 output zone (Parquet, untracked)
-│   └── curated/                # Person 2 curated analytics (Parquet, untracked)
-└── requirements.txt            # pyspark==4.2.0 and numpy added by Person 2
+Raw Data
+   ↓
+Schema Normalization
+   ↓
+Data Cleaning
+   ↓
+Duplicate Removal
+   ↓
+Entity Resolution
+   ↓
+Repost Detection
+   ↓
+Feature Engineering
+   ↓
+Curated Analytics Datasets
 ```
 
 ---
 
-## ⚙️ Pipeline Stages — What Was Built
+# 1. Data Cleaning & Normalization
 
-### Stage 1 — `spark_jobs/clean_normalize.py`
+### File
 
-Reads the JSON Lines conversion of Person 1's raw lake (`data/processed/raw_listings.jsonl`) with an explicit `StructType` schema and produces `data/processed/clean_listings.parquet`.
+```text
+spark_jobs/clean_normalize.py
+```
 
-- **Schema enforcement** — 14-field `StructType` covering listing IDs, title/description, price, category, location, and platform metadata
-- **Null handling** — `dropna` on the critical columns (`listing_id`, `title`, `description`, `price`, `category`, `posted_date`)
-- **Text preprocessing** — lowercasing, trimming, and non-alphanumeric stripping into `title_clean` / `description_clean`
-- **Timestamp conversion** — `posted_date`, `delisted_date`, `scraped_at` cast from strings to timestamps
-- **Deduplication** — exact duplicate removal on `listing_id`
-- **Parquet conversion** — columnar output for the downstream stages
+### Input
 
-### Stage 2 — `spark_jobs/entity_resolution.py` (Technical Centerpiece)
+The pipeline combines data from:
 
-Consumes `clean_listings.parquet` and assigns every listing an `entity_id`, producing `data/processed/entity_resolved.parquet`. Implements the MinHash LSH clustering required by the task spec (delivered as `entity_resolution.py`).
+* Mercari dataset
+* Generated ResellRadar listings
 
-- **Model-key construction** — strips listing-level attributes that should not define the underlying product: storage sizes (`16 GB` … `512 GB`, `1 TB`/`2 TB`), common colors (18 terms), and condition phrases (`like new`, `with box`, `unlocked`, `battery health`, …)
-- **Model-difference protection** — explicitly preserves `pro max` as a token (`promax`) so *iPhone 15 Pro* and *iPhone 15 Pro Max* are never merged, with a symmetric pair filter blocking Pro ↔ Pro Max joins
-- **Tokenization & hashing** — distinct token sets hashed via `HashingTF` (4096 features)
-- **MinHash LSH** — `MinHashLSH` with 5 hash tables; `approxSimilarityJoin` with Jaccard distance threshold **0.3** to generate candidate similar-title pairs
-- **Entity assignment** — each distinct `model_key` becomes one product entity; `row_number()` over a window assigns `entity_id`, mapped back onto every listing
-- **Validated result** — 50,000 listings collapsed to **79 unique entities**
+### Common Schema
 
-### Stage 3 — `spark_jobs/feature_engineering.py`
+The datasets are normalized into a common 19-field schema:
 
-Consumes `entity_resolved.parquet` and writes three curated analytics tables to `data/curated/`:
+```text
+listing_id
+title
+description
+price
+price_raw
+currency
+category
+sub_category
+category_full
+item_condition_id
+brand_name
+shipping
+posted_date
+delisted_date
+location_city
+location_region
+seller_type
+seller_id
+source_platform
+```
 
-| Output Table | Key Columns | Method |
-| ------------ | ----------- | ------ |
-| `depreciation_curve_curated.parquet` | `entity_id`, `listing_age_months`, `listing_count`, `average_price`, `median_price`, `baseline_price`, `price_change_percent` | First-seen entity date → `months_between` age buckets → avg/percentile price vs. age-0 baseline |
-| `resale_velocity_curated.parquet` | `entity_id`, `delisted_listings`, `avg_resale_days`, `median_resale_days` | `datediff(posted, delisted)` on delisted listings, aggregated per entity |
-| `regional_price_variance_curated.parquet` | `entity_id`, `location_region`, `listing_count`, `average_price`, `price_stddev`, `min/max_regional_price`, `regional_price_range` | Per-entity regional groupBy with windowed min/max price spread |
+Additional processing columns are created later in the pipeline.
 
-Also computes `resale_duration_days` on the entity-resolved frame as the velocity input.
+### Cleaning Operations
+
+* Standardized column names and data types
+* Converted prices to numeric values
+* Normalized category fields
+* Converted invalid description markers such as `[rm]` to null
+* Created cleaned title and description fields
+* Removed records missing essential fields
+* Removed duplicate listing IDs
+
+### Result
+
+```text
+Raw records:       1,982,535
+Clean records:     1,972,679
+Records removed:       9,856
+Duplicates removed:        0
+```
+
+Output:
+
+```text
+data/processed/clean_listings.parquet
+```
 
 ---
 
-## 🚀 How to Run (Person 2's Pipeline)
+# 2. Entity Resolution
 
-Prerequisites (venv, PySpark, `JAVA_HOME`, Windows Hadoop helpers) are documented in [`docs/SPARK_SETUP.md`](docs/SPARK_SETUP.md). Then run from the project root, in order:
+### File
+
+```text
+spark_jobs/entity_resolution.py
+```
+
+Entity resolution identifies listings that potentially represent the same underlying product/model.
+
+### Processing
+
+The pipeline:
+
+* Normalizes product titles
+* Removes irrelevant attributes such as storage sizes, colors and condition phrases
+* Protects important model distinctions such as `Pro` vs `Pro Max`
+* Generates normalized model keys
+* Uses MinHash LSH to identify similar model keys
+* Generates deterministic entity IDs
+* Creates repost-related keys
+* Detects potential reposts based on seller, title key and posting dates
+
+### Output
+
+```text
+data/processed/entity_resolved.parquet
+```
+
+### Results
+
+```text
+Input records:       1,972,679
+Output records:      1,972,679
+Unique entities:     1,102,295
+Detected reposts:       49,808
+```
+
+No records were lost during entity resolution.
+
+---
+
+# 3. Feature Engineering
+
+### File
+
+```text
+spark_jobs/feature_engineering.py
+```
+
+The feature engineering stage generates aggregated analytics datasets for the dashboard.
+
+---
+
+## 3.1 Depreciation Curve
+
+Groups listings by:
+
+```text
+category
+posted_year
+```
+
+Generated metrics:
+
+* Listing count
+* Average price
+* Minimum price
+* Maximum price
+
+Output:
+
+```text
+data/curated/depreciation_curve_curated.parquet
+```
+
+Current output:
+
+```text
+6 aggregated records
+```
+
+The current dataset contains:
+
+* Electronics
+* Home
+
+across the available years.
+
+---
+
+## 3.2 Resale Velocity
+
+Calculates the time between:
+
+```text
+posted_date → delisted_date
+```
+
+Only valid resale intervals between 0 and 3650 days are included.
+
+Generated metrics:
+
+* Resale count
+* Average days to resale
+* Median days to resale
+* Minimum days to resale
+* Maximum days to resale
+
+Output:
+
+```text
+data/curated/resale_velocity_curated.parquet
+```
+
+Current output:
+
+```text
+2 aggregated records
+```
+
+---
+
+## 3.3 Regional Price Variance
+
+Groups listings by:
+
+```text
+location_region
+category
+```
+
+Generated metrics:
+
+* Listing count
+* Average price
+* Price standard deviation
+* Price variance
+* Minimum price
+* Maximum price
+
+Output:
+
+```text
+data/curated/regional_price_variance_curated.parquet
+```
+
+Current output:
+
+```text
+34 aggregated records
+```
+
+---
+
+# Final Dataset Outputs
+
+| Dataset                                   | Purpose                            |
+| ----------------------------------------- | ---------------------------------- |
+| `clean_listings.parquet`                  | Clean normalized listing data      |
+| `entity_resolved.parquet`                 | Entity-resolved listing-level data |
+| `depreciation_curve_curated.parquet`      | Depreciation analytics             |
+| `resale_velocity_curated.parquet`         | Resale speed analytics             |
+| `regional_price_variance_curated.parquet` | Regional pricing analytics         |
+
+---
+
+# Dataset Sharing
+
+The generated Parquet datasets are **not stored in GitHub** because of their size.
+
+They are stored in the team's shared Google Drive:
+
+```text
+data/
+├── processed/
+│   └── entity_resolved.parquet
+│
+└── curated/
+    ├── depreciation_curve_curated.parquet
+    ├── resale_velocity_curated.parquet
+    └── regional_price_variance_curated.parquet
+```
+
+The processing scripts are available in GitHub.
+
+---
+
+# GitHub Branch
+
+Person 2 development branch:
+
+```text
+feature/big-data-processing
+```
+
+Main processing files:
+
+```text
+spark_jobs/
+├── clean_normalize.py
+├── entity_resolution.py
+└── feature_engineering.py
+```
+
+---
+
+# Running the Pipeline
+
+From the project root:
+
+### Stage 1
 
 ```powershell
-python spark_jobs/clean_normalize.py      # → data/processed/clean_listings.parquet
-python spark_jobs/entity_resolution.py    # → data/processed/entity_resolved.parquet
-python spark_jobs/feature_engineering.py  # → data/curated/*.parquet (3 tables)
+python spark_jobs\clean_normalize.py
 ```
 
-Input contract: the raw JSON array from `data/raw/` must be converted to JSON Lines at `data/processed/raw_listings.jsonl` before Stage 1.
+### Stage 2
+
+```powershell
+python spark_jobs\entity_resolution.py
+```
+
+### Stage 3
+
+```powershell
+python spark_jobs\feature_engineering.py
+```
+
+The scripts are configured for the project's Windows + PySpark environment and include the required Hadoop configuration.
 
 ---
 
-## 🔄 Data Flow
+# Final Processing Summary
 
 ```text
-Person 1: data/raw/*.json  (HDFS raw lake)
-     ↓  (convert to JSONL: data/processed/raw_listings.jsonl)
-Stage 1: clean_normalize.py
-     ↓
-data/processed/clean_listings.parquet
-     ↓
-Stage 2: entity_resolution.py  (MinHash LSH)
-     ↓
-data/processed/entity_resolved.parquet
-     ↓
-Stage 3: feature_engineering.py
-     ↓
-Person 3: data/curated/*.parquet  (dashboard & graph inputs)
+Raw Records
+1,982,535
+       ↓
+Clean Records
+1,972,679
+       ↓
+Entity-Resolved Records
+1,972,679
+       ↓
+Unique Entities
+1,102,295
+       ↓
+Detected Reposts
+49,808
+       ↓
+Curated Analytics
+├── Depreciation Curve
+├── Resale Velocity
+└── Regional Price Variance
 ```
 
 ---
 
-## 📌 Git History — Person 2's Commits
+# Handoff to Person 3
 
-All work was developed on the `feature/big-data-processing` branch and merged to `main` via **Pull Request #1**.
+Person 3 should:
 
-| Commit | Date | Message | Changes |
-| ------ | ---- | ------- | ------- |
-| `e07be81` | 2026-09-22 | Add Spark big data processing pipeline | Added `spark_jobs/clean_normalize.py`, `spark_jobs/entity_resolution.py`, `spark_jobs/feature_engineering.py`; updated `.gitignore` |
-| `5bae87a` | 2026-09-22 | Add Spark setup documentation | Added `docs/SPARK_SETUP.md` |
-| `bf24ce4` | 2026-09-22 | Add Spark dependencies | Added `pyspark==4.2.0`, `numpy` to `requirements.txt` |
+1. Pull the `feature/big-data-processing` branch.
+2. Obtain the Parquet datasets from the shared Google Drive.
+3. Keep the existing `data/processed/` and `data/curated/` folder structure.
+4. Use `entity_resolved.parquet` for listing-level analytics.
+5. Use the three curated datasets for dashboard visualizations.
+6. Avoid modifying the original processed datasets.
+7. Create separate derived datasets/views if additional dashboard-specific transformations are required.
 
----
+The Big Data Processing stage is complete and ready for dashboard/API integration.
 
-## ✅ Deliverable Status
-
-> **Spec deliverable**: canonicalized, deduplicated dataset + aggregated analytics tables — **Complete**
-
-- Canonicalized, deduplicated dataset → `data/processed/entity_resolved.parquet` (50,000 listings → 79 entities)
-- Aggregated analytics tables → 3 curated Parquet tables in `data/curated/`
-- Datasets are intentionally git-ignored (see `docs/SPARK_SETUP.md` §9) and are shared through the team's agreed HDFS/storage setup — the repository carries the processing code only.
