@@ -14,20 +14,20 @@ from pyspark.sql.types import (
 from pyspark.sql.functions import (
     col, lower, trim,
     regexp_replace, to_timestamp,
-    lit
+    lit, split, when
 )
 
-# -------------------------------------------------
-# Project paths
-# -------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# HDFS input paths (Person 1 handoff)
 MERCARI_PATH = "hdfs://namenode:9000/data/raw/mercari/train.tsv"
-GENERATED_PATH = "hdfs://namenode:9000/data/raw/generated/run=2026_09_28T150245Z/*.jsonl"
+GENERATED_PATH = (
+    "hdfs://namenode:9000/data/raw/generated/"
+    "run=2026_09_28T150245Z/*.jsonl"
+)
 
-# Local output
-OUTPUT_PATH = str(BASE_DIR / "data" / "processed" / "clean_listings.parquet")
+OUTPUT_PATH = str(
+    BASE_DIR / "data" / "processed" / "clean_listings.parquet"
+)
 
 print("Reading Mercari:")
 print(MERCARI_PATH)
@@ -35,124 +35,200 @@ print(MERCARI_PATH)
 print("\nReading Generated:")
 print(GENERATED_PATH)
 
-# -------------------------------------------------
-# Spark Session
-# -------------------------------------------------
 spark = (
     SparkSession.builder
     .appName("ResellRadar-CleanNormalize")
     .master("local[*]")
-    .config("spark.hadoop.io.native.lib.available", "false")
+    .config(
+        "spark.hadoop.io.native.lib.available",
+        "false"
+    )
     .getOrCreate()
 )
 
 spark.sparkContext.setLogLevel("ERROR")
 
-# -------------------------------------------------
-# 19-column Union Schema
-# -------------------------------------------------
+
+# ============================================================
+# UNION SCHEMA — 19 FIELDS
+# ============================================================
+
 raw_schema = StructType([
     StructField("listing_id", StringType(), True),
-    StructField("source_platform", StringType(), False),
     StructField("title", StringType(), True),
     StructField("description", StringType(), True),
     StructField("price", DoubleType(), True),
     StructField("price_raw", StringType(), True),
     StructField("currency", StringType(), True),
-    StructField("brand_name", StringType(), True),
-    StructField("category_full", StringType(), True),
+    StructField("category", StringType(), True),
     StructField("sub_category", StringType(), True),
+    StructField("category_full", StringType(), True),
     StructField("item_condition_id", IntegerType(), True),
+    StructField("brand_name", StringType(), True),
     StructField("shipping", IntegerType(), True),
-    StructField("seller_id", StringType(), True),
-    StructField("location_city", StringType(), True),
-    StructField("location_region", StringType(), True),
     StructField("posted_date", TimestampType(), True),
     StructField("delisted_date", TimestampType(), True),
-    StructField("image_url", StringType(), True),
-    StructField("product_url", StringType(), True)
+    StructField("location_city", StringType(), True),
+    StructField("location_region", StringType(), True),
+    StructField("seller_type", StringType(), True),
+    StructField("seller_id", StringType(), True),
+    StructField("source_platform", StringType(), False)
 ])
 
-# -------------------------------------------------
-# Read Mercari TSV
-# -------------------------------------------------
-mercari_df = (
+
+# ============================================================
+# MERCARI
+# ============================================================
+
+mercari_raw = (
     spark.read
     .option("header", True)
     .option("sep", "\t")
     .csv(MERCARI_PATH)
+)
+
+mercari_df = (
+    mercari_raw
     .select(
-        col("train_id").cast("string").alias("listing_id"),
-        lit("mercari").alias("source_platform"),
-        col("name").alias("title"),
-        col("item_description").alias("description"),
-        col("price").cast("double").alias("price"),
-        lit(None).cast("string").alias("price_raw"),
-        lit("USD").alias("currency"),
-        col("brand_name").alias("brand_name"),
-        col("category_name").alias("category_full"),
-        lit(None).cast("string").alias("sub_category"),
-        col("item_condition_id").cast("int").alias("item_condition_id"),
-        col("shipping").cast("int").alias("shipping"),
-        lit(None).cast("string").alias("seller_id"),
-        lit(None).cast("string").alias("location_city"),
-        lit(None).cast("string").alias("location_region"),
-        lit(None).cast("timestamp").alias("posted_date"),
-        lit(None).cast("timestamp").alias("delisted_date"),
-        lit(None).cast("string").alias("image_url"),
-        lit(None).cast("string").alias("product_url")
+        col("train_id")
+            .cast("string")
+            .alias("listing_id"),
+
+        col("name")
+            .alias("title"),
+
+        when(
+            col("item_description") == "[rm]",
+            None
+        ).otherwise(
+            col("item_description")
+        ).alias("description"),
+
+        col("price")
+            .cast("double")
+            .alias("price"),
+
+        lit(None)
+            .cast("string")
+            .alias("price_raw"),
+
+        lit("USD")
+            .alias("currency"),
+
+        split(
+            col("category_name"),
+            "/"
+        ).getItem(0)
+        .alias("category"),
+
+        split(
+            col("category_name"),
+            "/"
+        ).getItem(2)
+        .alias("sub_category"),
+
+        col("category_name")
+            .alias("category_full"),
+
+        col("item_condition_id")
+            .cast("int")
+            .alias("item_condition_id"),
+
+        col("brand_name")
+            .alias("brand_name"),
+
+        col("shipping")
+            .cast("int")
+            .alias("shipping"),
+
+        lit(None)
+            .cast("timestamp")
+            .alias("posted_date"),
+
+        lit(None)
+            .cast("timestamp")
+            .alias("delisted_date"),
+
+        lit(None)
+            .cast("string")
+            .alias("location_city"),
+
+        lit(None)
+            .cast("string")
+            .alias("location_region"),
+
+        lit(None)
+            .cast("string")
+            .alias("seller_type"),
+
+        lit(None)
+            .cast("string")
+            .alias("seller_id"),
+
+        lit("mercari")
+            .alias("source_platform")
     )
 )
 
-# -------------------------------------------------
-# Read Generated JSONL
-# -------------------------------------------------
+
+# ============================================================
+# GENERATED
+# ============================================================
+
 generated_df = (
     spark.read
     .json(GENERATED_PATH)
     .select(
         col("listing_id").cast("string"),
-        col("source_platform"),
         col("title"),
         col("description"),
         col("price").cast("double"),
         col("price_raw"),
         col("currency"),
-        col("brand_name"),
-        col("category_full"),
+        col("category"),
         col("sub_category"),
+        col("category_full"),
         col("item_condition_id").cast("int"),
+        col("brand_name"),
         col("shipping").cast("int"),
-        col("seller_id"),
-        col("location_city"),
-        col("location_region"),
         to_timestamp("posted_date").alias("posted_date"),
         to_timestamp("delisted_date").alias("delisted_date"),
-        col("image_url"),
-        col("product_url")
+        col("location_city"),
+        col("location_region"),
+        col("seller_type"),
+        col("seller_id"),
+        col("source_platform")
     )
 )
 
-# -------------------------------------------------
-# Union Both Sources
-# -------------------------------------------------
+
+# ============================================================
+# UNION
+# ============================================================
+
 df = mercari_df.unionByName(generated_df)
 
 print("\n========== RAW DATA ==========")
 print("Total Records:", df.count())
 
-# -------------------------------------------------
-# Drop only essential nulls
-# -------------------------------------------------
-df = df.dropna(subset=[
-    "listing_id",
-    "title",
-    "price"
-])
 
-# -------------------------------------------------
-# Clean Title
-# -------------------------------------------------
+# ============================================================
+# REQUIRED FIELDS ONLY
+# ============================================================
+
+df = df.dropna(
+    subset=[
+        "listing_id",
+        "title",
+        "price"
+    ]
+)
+
+
+# ============================================================
+# TEXT CLEANING
+# ============================================================
+
 df = df.withColumn(
     "title_clean",
     lower(
@@ -166,9 +242,6 @@ df = df.withColumn(
     )
 )
 
-# -------------------------------------------------
-# Clean Description
-# -------------------------------------------------
 df = df.withColumn(
     "description_clean",
     lower(
@@ -182,16 +255,25 @@ df = df.withColumn(
     )
 )
 
-# -------------------------------------------------
-# Remove duplicate listings
-# -------------------------------------------------
-df = df.dropDuplicates(["listing_id"])
 
-print("Clean Records:", df.count())
+# ============================================================
+# REMOVE DUPLICATE LISTINGS
+# ============================================================
 
-# -------------------------------------------------
-# Preview
-# -------------------------------------------------
+df = df.dropDuplicates(
+    ["listing_id"]
+)
+
+print(
+    "Clean Records:",
+    df.count()
+)
+
+
+# ============================================================
+# SAMPLE
+# ============================================================
+
 print("\n========== SAMPLE ==========")
 
 df.select(
@@ -200,14 +282,24 @@ df.select(
     "title",
     "title_clean",
     "price"
-).show(10, truncate=False)
+).show(
+    10,
+    truncate=False
+)
 
-# -------------------------------------------------
-# Save Parquet
-# -------------------------------------------------
-df.write.mode("overwrite").parquet(OUTPUT_PATH)
+
+# ============================================================
+# SAVE
+# ============================================================
+
+df.write.mode(
+    "overwrite"
+).parquet(
+    OUTPUT_PATH
+)
 
 print("\n========== SUCCESS ==========")
+
 print("Saved to:")
 print(OUTPUT_PATH)
 
