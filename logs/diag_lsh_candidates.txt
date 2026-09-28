@@ -1,0 +1,61 @@
+>> image   : resellradar/spark:4.2.0-numpy
+>> network : resellradar_default
+>> mount   : e:/Projects/ResellRadar -> /work
+>> job     : .probe_lsh.py
+WARNING: Using incubator modules: jdk.incubator.vector
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+26/09/28 19:16:10 INFO SparkContext: Running Spark version 4.2.0
+26/09/28 19:16:10 INFO SparkContext: OS info Linux, 6.6.87.2-microsoft-standard-WSL2, amd64
+26/09/28 19:16:10 INFO SparkContext: Java version 17.0.19+10
+26/09/28 19:16:10 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/09/28 19:16:10 INFO ResourceUtils: ==============================================================
+26/09/28 19:16:10 INFO ResourceUtils: No custom resources configured for spark.driver.
+26/09/28 19:16:10 INFO ResourceUtils: ==============================================================
+26/09/28 19:16:10 INFO SparkContext: Submitted application: lsh-candidate-volume
+26/09/28 19:16:10 INFO SecurityManager: Changing view acls to: spark
+26/09/28 19:16:10 INFO SecurityManager: Changing modify acls to: spark
+26/09/28 19:16:10 INFO SecurityManager: Changing view acls groups to: spark
+26/09/28 19:16:10 INFO SecurityManager: Changing modify acls groups to: spark
+26/09/28 19:16:10 INFO SecurityManager: SecurityManager: authentication disabled; ui acls disabled; users with view permissions: spark groups with view permissions: EMPTY; users with modify permissions: spark; groups with modify permissions: EMPTY; RPC SSL disabled
+26/09/28 19:16:11 INFO Utils: Successfully started service 'sparkDriver' on port 37053.
+26/09/28 19:16:11 INFO SparkEnv: Registering MapOutputTracker
+26/09/28 19:16:11 INFO SparkEnv: Registering BlockManagerMaster
+26/09/28 19:16:11 INFO BlockManagerMasterEndpoint: Using org.apache.spark.storage.DefaultTopologyMapper for getting topology information
+26/09/28 19:16:11 INFO BlockManagerMasterEndpoint: BlockManagerMasterEndpoint up
+26/09/28 19:16:11 INFO SparkEnv: Registering BlockManagerMasterHeartbeat
+26/09/28 19:16:11 INFO DiskBlockManager: Created local directory at /tmp/blockmgr-47082f38-f528-4929-b0d8-dcbf74f978b0
+26/09/28 19:16:11 INFO SparkEnv: Registering OutputCommitCoordinator
+26/09/28 19:16:11 INFO ResourceProfile: Default ResourceProfile created, executor resources: Map(cores -> name: cores, amount: 1, script: , vendor: , memory -> name: memory, amount: 1024, script: , vendor: , offHeap -> name: offHeap, amount: 0, script: , vendor: ), task resources: Map(cpus -> name: cpus, amount: 1.0)
+26/09/28 19:16:11 INFO ResourceProfile: Limiting resource is cpu
+26/09/28 19:16:11 INFO ResourceProfileManager: Added ResourceProfile id: 0
+26/09/28 19:16:11 INFO SecurityManager: Changing view acls to: spark
+26/09/28 19:16:11 INFO SecurityManager: Changing modify acls to: spark
+26/09/28 19:16:11 INFO SecurityManager: Changing view acls groups to: spark
+26/09/28 19:16:11 INFO SecurityManager: Changing modify acls groups to: spark
+26/09/28 19:16:11 INFO SecurityManager: SecurityManager: authentication disabled; ui acls disabled; users with view permissions: spark groups with view permissions: EMPTY; users with modify permissions: spark; groups with modify permissions: EMPTY; RPC SSL disabled
+26/09/28 19:16:11 INFO Executor: Starting executor ID driver on host 0e0c3d9ce516
+26/09/28 19:16:11 INFO Executor: Running Spark version 4.2.0
+26/09/28 19:16:11 INFO Executor: OS info Linux, 6.6.87.2-microsoft-standard-WSL2, amd64
+26/09/28 19:16:11 INFO Executor: Java version 17.0.19+10
+26/09/28 19:16:11 INFO Executor: Starting executor with user classpath (userClassPathFirst = false): ''
+26/09/28 19:16:11 INFO Executor: Created or updated repl class loader org.apache.spark.util.MutableURLClassLoader@11883a56 for default.
+26/09/28 19:16:11 INFO Utils: Successfully started service 'org.apache.spark.network.netty.NettyBlockTransferService' on port 34905.
+26/09/28 19:16:11 INFO NettyBlockTransferService: Server created on 0e0c3d9ce516:34905
+26/09/28 19:16:11 INFO BlockManager: Using org.apache.spark.storage.RandomBlockReplicationPolicy for block replication policy
+26/09/28 19:16:11 INFO BlockManagerMaster: Registering BlockManager BlockManagerId(driver, 0e0c3d9ce516, 34905, None)
+26/09/28 19:16:11 INFO BlockManagerMasterEndpoint: Registering block manager 0e0c3d9ce516:34905 with 3.4 GiB RAM, BlockManagerId(driver, 0e0c3d9ce516, 34905, None)
+26/09/28 19:16:11 INFO BlockManagerMaster: Registered BlockManager BlockManagerId(driver, 0e0c3d9ce516, 34905, None)
+26/09/28 19:16:11 INFO BlockManager: Initialized BlockManager: BlockManagerId(driver, 0e0c3d9ce516, 34905, None)
+LSH_INPUT_ROWS 1170504
+COLLIDING_BUCKETS 19544
+CANDIDATE_PAIRS_TOTAL 17360494325
+CANDIDATE_PAIRS_BAND_0 4172844061
+CANDIDATE_PAIRS_BAND_1 2341767334
+CANDIDATE_PAIRS_BAND_2 3897510757
+CANDIDATE_PAIRS_BAND_3 4194382013
+CANDIDATE_PAIRS_BAND_4 2753990160
+BIGGEST_BUCKET band= 3 size= 55513
+BIGGEST_BUCKET band= 0 size= 49910
+BIGGEST_BUCKET band= 0 size= 45411
+BIGGEST_BUCKET band= 2 size= 40347
+BIGGEST_BUCKET band= 2 size= 32443

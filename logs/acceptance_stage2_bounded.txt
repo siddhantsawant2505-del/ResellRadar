@@ -1,0 +1,103 @@
+WARNING: Using incubator modules: jdk.incubator.vector
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+26/09/28 19:17:53 INFO SparkContext: Running Spark version 4.2.0
+26/09/28 19:17:53 INFO SparkContext: OS info Linux, 6.6.87.2-microsoft-standard-WSL2, amd64
+26/09/28 19:17:53 INFO SparkContext: Java version 17.0.19+10
+26/09/28 19:17:53 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/09/28 19:17:53 INFO ResourceUtils: ==============================================================
+26/09/28 19:17:53 INFO ResourceUtils: No custom resources configured for spark.driver.
+26/09/28 19:17:53 INFO ResourceUtils: ==============================================================
+26/09/28 19:17:53 INFO SparkContext: Submitted application: ResellRadar-EntityResolution
+26/09/28 19:17:53 INFO SecurityManager: Changing view acls to: spark
+26/09/28 19:17:53 INFO SecurityManager: Changing modify acls to: spark
+26/09/28 19:17:53 INFO SecurityManager: Changing view acls groups to: spark
+26/09/28 19:17:53 INFO SecurityManager: Changing modify acls groups to: spark
+26/09/28 19:17:53 INFO SecurityManager: SecurityManager: authentication disabled; ui acls disabled; users with view permissions: spark groups with view permissions: EMPTY; users with modify permissions: spark; groups with modify permissions: EMPTY; RPC SSL disabled
+26/09/28 19:17:53 INFO Utils: Successfully started service 'sparkDriver' on port 45825.
+26/09/28 19:17:53 INFO SparkEnv: Registering MapOutputTracker
+26/09/28 19:17:53 INFO SparkEnv: Registering BlockManagerMaster
+26/09/28 19:17:53 INFO BlockManagerMasterEndpoint: Using org.apache.spark.storage.DefaultTopologyMapper for getting topology information
+26/09/28 19:17:53 INFO BlockManagerMasterEndpoint: BlockManagerMasterEndpoint up
+26/09/28 19:17:53 INFO SparkEnv: Registering BlockManagerMasterHeartbeat
+26/09/28 19:17:53 INFO DiskBlockManager: Created local directory at /tmp/blockmgr-c069c70d-3404-477a-8616-aebd1c71883c
+26/09/28 19:17:53 INFO SparkEnv: Registering OutputCommitCoordinator
+26/09/28 19:17:53 INFO ResourceProfile: Default ResourceProfile created, executor resources: Map(cores -> name: cores, amount: 1, script: , vendor: , memory -> name: memory, amount: 1024, script: , vendor: , offHeap -> name: offHeap, amount: 0, script: , vendor: ), task resources: Map(cpus -> name: cpus, amount: 1.0)
+26/09/28 19:17:53 INFO ResourceProfile: Limiting resource is cpu
+26/09/28 19:17:53 INFO ResourceProfileManager: Added ResourceProfile id: 0
+26/09/28 19:17:53 INFO SecurityManager: Changing view acls to: spark
+26/09/28 19:17:53 INFO SecurityManager: Changing modify acls to: spark
+26/09/28 19:17:53 INFO SecurityManager: Changing view acls groups to: spark
+26/09/28 19:17:53 INFO SecurityManager: Changing modify acls groups to: spark
+26/09/28 19:17:53 INFO SecurityManager: SecurityManager: authentication disabled; ui acls disabled; users with view permissions: spark groups with view permissions: EMPTY; users with modify permissions: spark; groups with modify permissions: EMPTY; RPC SSL disabled
+26/09/28 19:17:53 INFO Executor: Starting executor ID driver on host 8c393553a0e9
+26/09/28 19:17:53 INFO Executor: Running Spark version 4.2.0
+26/09/28 19:17:53 INFO Executor: OS info Linux, 6.6.87.2-microsoft-standard-WSL2, amd64
+26/09/28 19:17:53 INFO Executor: Java version 17.0.19+10
+26/09/28 19:17:53 INFO Executor: Starting executor with user classpath (userClassPathFirst = false): ''
+26/09/28 19:17:53 INFO Executor: Created or updated repl class loader org.apache.spark.util.MutableURLClassLoader@2631ced0 for default.
+26/09/28 19:17:53 INFO Utils: Successfully started service 'org.apache.spark.network.netty.NettyBlockTransferService' on port 43731.
+26/09/28 19:17:53 INFO NettyBlockTransferService: Server created on 8c393553a0e9:43731
+26/09/28 19:17:53 INFO BlockManager: Using org.apache.spark.storage.RandomBlockReplicationPolicy for block replication policy
+26/09/28 19:17:53 INFO BlockManagerMaster: Registering BlockManager BlockManagerId(driver, 8c393553a0e9, 43731, None)
+26/09/28 19:17:53 INFO BlockManagerMasterEndpoint: Registering block manager 8c393553a0e9:43731 with 3.4 GiB RAM, BlockManagerId(driver, 8c393553a0e9, 43731, None)
+26/09/28 19:17:53 INFO BlockManagerMaster: Registered BlockManager BlockManagerId(driver, 8c393553a0e9, 43731, None)
+26/09/28 19:17:53 INFO BlockManager: Initialized BlockManager: BlockManagerId(driver, 8c393553a0e9, 43731, None)
+Reading:
+/work/data/processed/clean_listings.parquet
+
+========== DATASET ==========
+Total Records: 1972679
+
+========== UNIQUE MODELS ==========
+Unique model keys: 1109646
+
+========== MINHASH LSH ==========
+MinHash model created successfully.
+
+========== SIMILAR MODEL PAIRS ==========
++-----------------------------------------------------------+------------------------------------------------------------------+--------------------------------------------+--------------------------------------------+----------------+
+|title_a                                                    |title_b                                                           |model_a                                     |model_b                                     |jaccard_distance|
++-----------------------------------------------------------+------------------------------------------------------------------+--------------------------------------------+--------------------------------------------+----------------+
+|38ddd vs bra                                               |vs bra 38ddd                                                      |38ddd vs bra                                |vs bra 38ddd                                |0.0             |
+|bapesta                                                    |bke                                                               |bapesta                                     |bke                                         |0.0             |
+|apple iphone 15 pro max 256gb ocean blue                   |blue apple iphone 15 pro max 1tb ocean blue                       |apple iphone 15 promax ocean                |apple iphone 15 promax ocean                |0.0             |
+|columbia fleece                                            |purple columbia fleece                                            |columbia fleece                             |columbia fleece                             |0.0             |
+|psycgradof07                                               |unicorns                                                          |psycgradof07                                |unicorns                                    |0.0             |
+|lularoe large grey irma                                    |lularoe white large irma                                          |lularoe large irma                          |lularoe large irma                          |0.0             |
+|shape tape concealer medium                                |tape shape concealer medium                                       |shape tape concealer medium                 |tape shape concealer medium                 |0.0             |
+|black  white scrub top                                     |snow white scrub top                                              |scrub top                                   |scrub top                                   |0.0             |
+|apple iphone 14 pro 256gb midnight black factory unlocked  |apple iphone 14 pro 512gb midnight black like new factory unlocked|apple iphone 14 pro midnight factory        |apple iphone 14 pro midnight factory        |0.0             |
+|black xbox360 controller                                   |xbox360 controller                                                |xbox360 controller                          |xbox360 controller                          |0.0             |
+|color contacts  gray                                       |gray color contacts                                               |color contacts                              |color contacts                              |0.0             |
+|pink vs lanyard                                            |vs pink lanyard                                                   |vs lanyard                                  |vs lanyard                                  |0.0             |
+|all white converse                                         |converse all red                                                  |all converse                                |converse all                                |0.0             |
+|younique concealer scarlet                                 |younique scarlet concealer                                        |younique concealer scarlet                  |younique scarlet concealer                  |0.0             |
+|pokemon gold                                               |pokemon yellow                                                    |pokemon                                     |pokemon                                     |0.0             |
+|pink popsocket                                             |silver grey gray popsocket                                        |popsocket                                   |popsocket                                   |0.0             |
+|large purple irma lularoe                                  |lularoe large grey irma                                           |large irma lularoe                          |lularoe large irma                          |0.0             |
+|nwt pink vs sports bra                                     |vs pink sports bra nwt                                            |nwt vs sports bra                           |vs sports bra nwt                           |0.0             |
+|iphone 6 plus clear gold soft case                         |iphone 6 plus clear soft case                                     |iphone 6 plus clear soft case               |iphone 6 plus clear soft case               |0.0             |
+|samsung galaxy s23 128gb lavender with box                 |samsung galaxy s23 256gb lavender like new                        |samsung galaxy s23 lavender                 |samsung galaxy s23 lavender                 |0.0             |
+|apple iphone se 2nd gen 128gb coral red like new clean imei|apple iphone se 2nd gen 64gb coral red clean imei                 |apple iphone se 2nd gen coral clean imei    |apple iphone se 2nd gen coral clean imei    |0.0             |
+|boost balls                                                |vs red swimsuit                                                   |boost balls                                 |vs swimsuit                                 |0.0             |
+|iphone 66s case new                                        |new iphone 66s case                                               |iphone 66s case new                         |new iphone 66s case                         |0.0             |
+|bundle for gaia                                            |for mmmurph3 bundle                                               |bundle for gaia                             |for mmmurph3 bundle                         |0.0             |
+|apple iphone 15 pro 256gb space gray  unlocked relist      |gray apple iphone 15 pro 128gb space gray relist                  |apple iphone 15 pro space relist            |apple iphone 15 pro space relist            |0.0             |
+|titanium samsung galaxy s23 128gb titanium  must go        |titanium samsung galaxy s23 256gb titanium  must go               |titanium samsung galaxy s23 titanium must go|titanium samsung galaxy s23 titanium must go|0.0             |
+|coach purse orange and brown                               |like new coach purse orange and brown                             |coach purse orange and                      |coach purse orange and                      |0.0             |
+|lularoe new black tc leggings                              |lularoe tc new leggings                                           |lularoe new tc leggings                     |lularoe tc new leggings                     |0.0             |
+|iphone 66s mandala case                                    |mandala case iphone 66s                                           |iphone 66s mandala case                     |mandala case iphone 66s                     |0.0             |
+|apple iphone 15 128gb pearl white  los angeles pickup      |apple iphone 15 256gb pearl white  los angeles pickup             |apple iphone 15 pearl los angeles pickup    |apple iphone 15 pearl los angeles pickup    |0.0             |
++-----------------------------------------------------------+------------------------------------------------------------------+--------------------------------------------+--------------------------------------------+----------------+
+only showing top 30 rows
+
+========== REPOST DETECTION ==========
+Detected reposts: 49788
+Unique Entities: 1109646
+Listings with Entity ID: 1972679
+
+========== SAVING OUTPUT ==========
+
+SUCCESS!
+Entity-resolved dataset saved to:
+/work/data/processed/entity_resolved.parquet

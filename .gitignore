@@ -51,4 +51,6 @@ Thumbs.db
 *.swp
 *.swo
 
-hadoop/
+# Windows winutils helpers, if a dev drops them at the repo root
+# (jobs point HADOOP_HOME here). Anchored so docker/hadoop stays tracked.
+/hadoop/

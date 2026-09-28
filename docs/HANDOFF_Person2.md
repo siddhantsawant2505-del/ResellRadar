@@ -5,6 +5,15 @@
 **real** single-node HDFS cluster. This page is the fast path; the binding contracts are
 `docs/SCHEMA_generated.md` + `docs/SCHEMA_MISMATCHES.md`.
 
+**Acceptance run 2026-09-29** (your uploaded jobs, executed against the live cluster):
+`clean_normalize.py` and `feature_engineering.py` are **accepted** (9/9 and 6/6 checks).
+`entity_resolution.py` **cannot run as uploaded**: its `approxSimilarityJoin` self-join is
+dead code (it never feeds `entity_id`) yet costs **17,360,494,325 candidate pairs**, and its
+entity key strips the product identity (storage/colour) instead of the listing chatter.
+Fixed copy: **`spark_jobs/entity_resolution_v2.py`** - same input path, output path and
+schema - same-product F1 **0.2341 -> 0.9802**, repost scores unchanged. Full evidence:
+`logs/acceptance_2026_09_29.md`; details in section 4c.
+
 ## 1. Where the data lives
 
 | Zone | Local | HDFS (live cluster) |
@@ -85,10 +94,67 @@ python scripts/evaluate_er.py --pred <your_output.parquet|csv>
 ```
 
 Your file needs `listing_id` + a cluster column (`predicted_canonical_id`, or the
-`pred_canonical_id` / `cluster_id` aliases); optionally `predicted_is_repost` and
-`predicted_original_listing_id`. Self-tested: perfect predictions score 1.0000;
-scoring is deterministic across re-runs. `cluster_id` may be your own opaque labels -
-any consistent grouping is scored correctly.
+`pred_canonical_id` / `cluster_id` / **`entity_id`** aliases - `entity_id` is what
+`spark_jobs/entity_resolution.py` actually emits, so it grades as-is, no rename step);
+optionally `predicted_is_repost` and `predicted_original_listing_id`. Self-tested:
+perfect predictions score 1.0000; scoring is deterministic across re-runs. `cluster_id`
+may be your own opaque labels - any consistent grouping is scored correctly.
+
+## 4c. Acceptance run 2026-09-29 - two defects, both fixed in `entity_resolution_v2.py`
+
+**F1 (blocking: the job never finishes).** The `pairs` DataFrame from
+`model.approxSimilarityJoin(...)` is filtered and `show(30)`n but never consumed - `entity_id`
+comes from `row_number().over(Window.orderBy("model_key"))` over `distinct(model_key)`.
+Proof from the run: `Unique model keys: 1,109,646` and `Unique Entities: 1,109,646`
+(identical). On the delivered data the model set is 1,170,504 rows, so that display-only
+self-join explodes to 17,360,494,325 candidate pairs (measured,
+`logs/diag_lsh_candidates.txt`) and the job never leaves the `SIMILAR MODEL PAIRS` step
+(16m32s, 16 cores, no output). Fix: delete the block, or bound the demo input.
+
+**F2 (semantic: the entity key throws the product away).** `docs/SCHEMA_generated.md`
+defines a canonical product as `brand x model x storage x colour` (phones) with titles as
+surface variants of it - but the `model_key` regexes strip storage and colours, i.e. the
+parts that ARE the product, and keep the listing chatter. Measured on the graded subset:
+**39.1 model_keys per true product** (median 42, max 80); only 3 of 1,107 products were
+covered by a single key. `scripts/evaluate_er.py` grades it at Task A F1 **0.2341**
+(P 0.5017 / R 0.1527).
+
+**Fix - `spark_jobs/entity_resolution_v2.py`** (same input path, output path and schema, so
+Stage 3 and the dashboard are untouched):
+
+1. entity key = the sorted token **set** of `title_clean`, minus the row's own
+   `location_city`, minus the documented chatter vocabulary (condition words, `TITLE_EXTRAS`,
+   and `used/fs/selling/pickup/must/go/relist`). Storage, colour and model are kept;
+2. the dead LSH self-join is deleted (and with it the `pyspark.ml`/`numpy` dependency);
+3. no title indirection - listings join the entity table on `model_key` directly, which also
+   removes a latent duplicate-row bug;
+4. whitespace is collapsed before tokenizing: `clean_normalize` leaves a double space behind
+   the `" - Unlocked"` / `" - {city} pickup"` / `" - {condition}"` templates, and splitting
+   on a literal space emitted an empty token that split every product into exactly 2 entities.
+
+Repost detection is copied verbatim, so tasks B and C are unchanged.
+
+| | v1 as uploaded | v2 fixed |
+|---|---|---|
+| runtime | never finished | ~4 min |
+| entities per true product | mean 39.1, max 80 | **1.00, max 1** |
+| products covered by exactly 1 entity | 3 / 1,107 | **1,107 / 1,107** |
+| Task A same-product F1 | 0.2341 | **0.9802** (P 1.0000 / R 0.9611) |
+| Task B repost F1 | 0.9826 | 0.9826 |
+| Task C link F1 | 0.9621 | 0.9621 |
+
+The leftover recall loss is coverage, not clustering: the 9,856 null-price rows that Stage 1
+drops have no prediction, capping recall at 98.03%.
+
+Your call now: adopt v2 into `entity_resolution.py` (your file was left untouched so the two
+can be diffed), or tell Person 1 which parts you want changed.
+
+**Caveat on that 0.9802.** The chatter list comes from the documented messiness spec, not
+from the answer key, but it is a *fixed* vocabulary - on the real Mercari half you would want
+a learned/extended one, so treat 0.9802 as an upper bound for this synthetic corpus.
+
+**F3 (open, non-blocking).** `row_number().over(Window.orderBy("model_key"))` has no
+`partitionBy`, so all ~1.1M keys pass through a single partition.
 
 ## 5. Evidence pack (for the report / viva)
 

@@ -7,7 +7,8 @@ Grades an entity-resolution output file against the generator's ground truth:
 
 Predictions file (.parquet or .csv) must contain:
     listing_id
-    predicted_canonical_id        (aliases: pred_canonical_id, canonical_id, cluster_id)
+    predicted_canonical_id        (aliases: pred_canonical_id, canonical_id, cluster_id,
+                                   entity_id)
 and optionally:
     predicted_original_listing_id (aliases: pred_original_listing_id, original_id)
     predicted_is_repost           (aliases: pred_is_repost, repost_pred)
@@ -35,7 +36,10 @@ import pandas as pd
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-CANON_ALIASES = ["predicted_canonical_id", "pred_canonical_id", "canonical_id", "cluster_id"]
+# `entity_id` is what spark_jobs/entity_resolution.py actually emits; accepted as an alias
+# so the delivered Stage 2 output grades without a rename step.
+CANON_ALIASES = ["predicted_canonical_id", "pred_canonical_id", "canonical_id", "cluster_id",
+                 "entity_id"]
 ORIG_ALIASES = ["predicted_original_listing_id", "pred_original_listing_id", "original_id"]
 REPOST_ALIASES = ["predicted_is_repost", "pred_is_repost", "repost_pred"]
 
@@ -121,9 +125,11 @@ def main() -> None:
     pred_pairs, _ = pair_counts(merged["predicted_canonical_id"].where(~unpred))
     truth_pairs, _ = pair_counts(merged["true_canonical_id"])
     # intersection = pairs predicted together AND truly same canonical
-    both = merged.assign(p=merged["predicted_canonical_id"].where(~unpred),
-                         t=merged["true_canonical_id"])
-    grp = both.groupby(["p", "t"], dropna=False).size()
+    # Correct pairs = pairs the model puts together that are truly same-canonical. Restrict
+    # to rows that HAVE a prediction: with dropna=False the unpredicted rows formed a phantom
+    # NaN cluster whose within-cluster pairs were counted as correct (precision > 1).
+    both = merged.loc[~unpred, ["predicted_canonical_id", "true_canonical_id"]]
+    grp = both.groupby(["predicted_canonical_id", "true_canonical_id"]).size()
     tp_pairs = int((grp * (grp - 1) // 2).sum())
     pA, rA, fA = prf(tp_pairs, pred_pairs, truth_pairs)
     lines += ["## Task A - canonical clustering (pairwise)", "",

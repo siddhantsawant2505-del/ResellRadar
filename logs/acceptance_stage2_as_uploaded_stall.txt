@@ -1,0 +1,102 @@
+>> building resellradar/spark:4.2.0-numpy from docker/spark/Dockerfile
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.03kB 0.0s done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for docker.io/apache/spark:4.2.0-scala2.13-java17-python3-ubuntu
+#2 DONE 0.1s
+
+#3 [internal] load .dockerignore
+#3 transferring context:
+#3 transferring context: 2B done
+#3 DONE 0.1s
+
+#4 [1/2] FROM docker.io/apache/spark:4.2.0-scala2.13-java17-python3-ubuntu@sha256:84a4eedb1abcf36a90808d5a1310e3e910b78c85d85aaa1599e31af5f862ed59
+#4 resolve docker.io/apache/spark:4.2.0-scala2.13-java17-python3-ubuntu@sha256:84a4eedb1abcf36a90808d5a1310e3e910b78c85d85aaa1599e31af5f862ed59 0.0s done
+#4 DONE 0.5s
+
+#5 [2/2] RUN pip3 install --no-cache-dir numpy     || PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir numpy
+#5 1.307 Collecting numpy
+#5 1.450   Downloading numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (16.8 MB)
+#5 2.875      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.8/16.8 MB 12.4 MB/s eta 0:00:00
+#5 2.919 Installing collected packages: numpy
+#5 4.475 Successfully installed numpy-2.2.6
+#5 4.475 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+#5 DONE 4.7s
+
+#6 exporting to image
+#6 exporting layers
+#6 exporting layers 2.1s done
+#6 exporting manifest sha256:6f090347572f3546005b36b58ba964e5f467ad080b14d0e24cdbae42c45640dc 0.0s done
+#6 exporting config sha256:4e9a65d0adc4959094343b542a36e3001d2a6147332ffa9774241f0907f0db3f 0.0s done
+#6 exporting attestation manifest sha256:9833ef31f3c86f4df03a5ae43c1485c106c07f174bbdb7f7d6e8ad409c0e770b 0.1s done
+#6 exporting manifest list sha256:afa5cb87c1dfd401e23ff3b2dd70e9060e4faf99505c0c706a06e1dc79df5dd6 0.0s done
+#6 naming to docker.io/resellradar/spark:4.2.0-numpy done
+#6 unpacking to docker.io/resellradar/spark:4.2.0-numpy
+#6 unpacking to docker.io/resellradar/spark:4.2.0-numpy 0.5s done
+#6 DONE 2.8s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/mh00b43tu4ixgf0d9m8icotj1
+>> image   : resellradar/spark:4.2.0-numpy
+>> network : resellradar_default
+>> mount   : e:/Projects/ResellRadar -> /work
+>> job     : spark_jobs/entity_resolution.py
+WARNING: Using incubator modules: jdk.incubator.vector
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+26/09/28 18:48:37 INFO SparkContext: Running Spark version 4.2.0
+26/09/28 18:48:37 INFO SparkContext: OS info Linux, 6.6.87.2-microsoft-standard-WSL2, amd64
+26/09/28 18:48:37 INFO SparkContext: Java version 17.0.19+10
+26/09/28 18:48:37 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/09/28 18:48:37 INFO ResourceUtils: ==============================================================
+26/09/28 18:48:37 INFO ResourceUtils: No custom resources configured for spark.driver.
+26/09/28 18:48:37 INFO ResourceUtils: ==============================================================
+26/09/28 18:48:37 INFO SparkContext: Submitted application: ResellRadar-EntityResolution
+26/09/28 18:48:37 INFO SecurityManager: Changing view acls to: spark
+26/09/28 18:48:37 INFO SecurityManager: Changing modify acls to: spark
+26/09/28 18:48:37 INFO SecurityManager: Changing view acls groups to: spark
+26/09/28 18:48:37 INFO SecurityManager: Changing modify acls groups to: spark
+26/09/28 18:48:37 INFO SecurityManager: SecurityManager: authentication disabled; ui acls disabled; users with view permissions: spark groups with view permissions: EMPTY; users with modify permissions: spark; groups with modify permissions: EMPTY; RPC SSL disabled
+26/09/28 18:48:37 INFO Utils: Successfully started service 'sparkDriver' on port 36733.
+26/09/28 18:48:37 INFO SparkEnv: Registering MapOutputTracker
+26/09/28 18:48:37 INFO SparkEnv: Registering BlockManagerMaster
+26/09/28 18:48:37 INFO BlockManagerMasterEndpoint: Using org.apache.spark.storage.DefaultTopologyMapper for getting topology information
+26/09/28 18:48:37 INFO BlockManagerMasterEndpoint: BlockManagerMasterEndpoint up
+26/09/28 18:48:37 INFO SparkEnv: Registering BlockManagerMasterHeartbeat
+26/09/28 18:48:37 INFO DiskBlockManager: Created local directory at /tmp/blockmgr-4d48b3fb-8627-4e04-9dce-6bd29dadce4f
+26/09/28 18:48:37 INFO SparkEnv: Registering OutputCommitCoordinator
+26/09/28 18:48:38 INFO ResourceProfile: Default ResourceProfile created, executor resources: Map(cores -> name: cores, amount: 1, script: , vendor: , memory -> name: memory, amount: 1024, script: , vendor: , offHeap -> name: offHeap, amount: 0, script: , vendor: ), task resources: Map(cpus -> name: cpus, amount: 1.0)
+26/09/28 18:48:38 INFO ResourceProfile: Limiting resource is cpu
+26/09/28 18:48:38 INFO ResourceProfileManager: Added ResourceProfile id: 0
+26/09/28 18:48:38 INFO SecurityManager: Changing view acls to: spark
+26/09/28 18:48:38 INFO SecurityManager: Changing modify acls to: spark
+26/09/28 18:48:38 INFO SecurityManager: Changing view acls groups to: spark
+26/09/28 18:48:38 INFO SecurityManager: Changing modify acls groups to: spark
+26/09/28 18:48:38 INFO SecurityManager: SecurityManager: authentication disabled; ui acls disabled; users with view permissions: spark groups with view permissions: EMPTY; users with modify permissions: spark; groups with modify permissions: EMPTY; RPC SSL disabled
+26/09/28 18:48:38 INFO Executor: Starting executor ID driver on host 88ccd1ba76f2
+26/09/28 18:48:38 INFO Executor: Running Spark version 4.2.0
+26/09/28 18:48:38 INFO Executor: OS info Linux, 6.6.87.2-microsoft-standard-WSL2, amd64
+26/09/28 18:48:38 INFO Executor: Java version 17.0.19+10
+26/09/28 18:48:38 INFO Executor: Starting executor with user classpath (userClassPathFirst = false): ''
+26/09/28 18:48:38 INFO Executor: Created or updated repl class loader org.apache.spark.util.MutableURLClassLoader@788fe33e for default.
+26/09/28 18:48:38 INFO Utils: Successfully started service 'org.apache.spark.network.netty.NettyBlockTransferService' on port 36557.
+26/09/28 18:48:38 INFO NettyBlockTransferService: Server created on 88ccd1ba76f2:36557
+26/09/28 18:48:38 INFO BlockManager: Using org.apache.spark.storage.RandomBlockReplicationPolicy for block replication policy
+26/09/28 18:48:38 INFO BlockManagerMaster: Registering BlockManager BlockManagerId(driver, 88ccd1ba76f2, 36557, None)
+26/09/28 18:48:38 INFO BlockManagerMasterEndpoint: Registering block manager 88ccd1ba76f2:36557 with 3.4 GiB RAM, BlockManagerId(driver, 88ccd1ba76f2, 36557, None)
+26/09/28 18:48:38 INFO BlockManagerMaster: Registered BlockManager BlockManagerId(driver, 88ccd1ba76f2, 36557, None)
+26/09/28 18:48:38 INFO BlockManager: Initialized BlockManager: BlockManagerId(driver, 88ccd1ba76f2, 36557, None)
+Reading:
+/work/data/processed/clean_listings.parquet
+
+========== DATASET ==========
+Total Records: 1972679
+
+========== UNIQUE MODELS ==========
+Unique model keys: 1109646
+
+========== MINHASH LSH ==========
+MinHash model created successfully.
+
+========== SIMILAR MODEL PAIRS ==========
