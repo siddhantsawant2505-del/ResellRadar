@@ -32,6 +32,12 @@ docker ps                                           # wait for: namenode (health
 docker exec resellradar-namenode hdfs dfsadmin -report   # "Live datanodes (1)"
 ```
 
+The NameNode healthcheck asks whether the HDFS RPC answers (`dfsadmin -report`), not whether
+safe mode is off - safe mode can only lift *after* the DataNode registers, so a
+safemode-based check deadlocked every restart with data on disk (the DataNode sat waiting
+for `service_healthy`). With the RPC check, plain `up -d` brings the whole stack up; safe
+mode lifts by itself seconds after the DataNode's block report lands.
+
 Web UI: http://localhost:9870 → Utilities ▸ Browse the file system.
 
 ## Push the raw zone (real upload)

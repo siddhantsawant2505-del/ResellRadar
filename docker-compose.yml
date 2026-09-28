@@ -34,7 +34,13 @@ services:
       - ./docker/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
       - ./docker/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
     healthcheck:
-      test: ["CMD-SHELL", "hdfs dfsadmin -fs hdfs://namenode:9000 -safemode get | grep -q OFF"]
+      # "NameNode RPC answers?" - NOT "safemode OFF".
+      # The old check (`-safemode get | grep -q OFF`) deadlocked every restart with data on
+      # disk: safemode lifts only after a DataNode's block report, while the DataNode
+      # waits below on service_healthy. `-report` answers even in safe mode, which is
+      # exactly the dependency the DataNode needs (RPC reachable). First start formats
+      # with zero blocks, which is why the old check only ever worked on a fresh cluster.
+      test: ["CMD-SHELL", "hdfs dfsadmin -fs hdfs://namenode:9000 -report 2>/dev/null | grep -q 'Configured Capacity'"]
       interval: 10s
       timeout: 5s
       retries: 30
