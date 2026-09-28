@@ -1,49 +1,66 @@
-from pathlib import Path
+import os
+import re
+import shutil
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col,
-    split,
-    array_distinct,
-    row_number,
-    regexp_replace,
-    trim,
-    when,
-    lag,
-    datediff,
-    first_value
-)
+from pyspark.sql import functions as F
 from pyspark.sql.window import Window
-from pyspark.ml.feature import HashingTF, MinHashLSH
 
 
 # ============================================================
-# PATHS
+# 1. WINDOWS HADOOP SETUP
 # ============================================================
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-INPUT_PATH = str(
-    BASE_DIR / "data" / "processed" / "clean_listings.parquet"
+HADOOP_HOME = os.path.join(PROJECT_ROOT, "hadoop")
+
+os.environ["HADOOP_HOME"] = HADOOP_HOME
+os.environ["hadoop.home.dir"] = HADOOP_HOME
+
+hadoop_bin = os.path.join(HADOOP_HOME, "bin")
+
+if hadoop_bin not in os.environ["PATH"]:
+    os.environ["PATH"] = hadoop_bin + os.pathsep + os.environ["PATH"]
+
+
+# ============================================================
+# 2. PATHS
+# ============================================================
+
+INPUT_PATH = os.path.join(
+    PROJECT_ROOT,
+    "data",
+    "processed",
+    "clean_listings.parquet"
 )
 
-OUTPUT_PATH = str(
-    BASE_DIR / "data" / "processed" / "entity_resolved.parquet"
+OUTPUT_PATH = os.path.join(
+    PROJECT_ROOT,
+    "data",
+    "processed",
+    "entity_resolved.parquet"
 )
 
 
 # ============================================================
-# START SPARK
+# 3. SPARK SESSION
 # ============================================================
 
 spark = (
     SparkSession.builder
     .appName("ResellRadar-EntityResolution")
     .master("local[*]")
+    .config("spark.driver.memory", "4g")
+    .config("spark.executor.memory", "4g")
+    .config("spark.hadoop.io.native.lib.available", "false")
     .config(
-        "spark.hadoop.io.native.lib.available",
-        "false"
+        "spark.hadoop.fs.file.impl",
+        "org.apache.hadoop.fs.RawLocalFileSystem"
     )
+    .config("spark.sql.adaptive.enabled", "true")
+    .config("spark.sql.shuffle.partitions", "16")
+    .config("spark.sql.debug.maxToStringFields", "200")
     .getOrCreate()
 )
 
@@ -51,77 +68,259 @@ spark.sparkContext.setLogLevel("ERROR")
 
 
 # ============================================================
-# READ CLEAN DATA
+# 4. READ CLEAN DATA
 # ============================================================
 
-print("Reading:")
+print("=" * 60)
+print("STAGE 2: ENTITY RESOLUTION")
+print("=" * 60)
+
+print("\nReading:")
 print(INPUT_PATH)
 
 df = spark.read.parquet(INPUT_PATH)
 
-total_records = df.count()
+print("\nInput schema:")
+df.printSchema()
 
-print("\n========== DATASET ==========")
-print("Total Records:", total_records)
+print("\nInput columns:")
+print(df.columns)
 
 
 # ============================================================
-# CREATE MODEL-AWARE KEY
+# 5. CREATE MODEL KEY
+# ============================================================
+
+print("\nCreating normalized model keys...")
+
+
+def normalize_model_key(column):
+    """
+    Normalize product title while preserving important
+    distinctions such as Pro vs Pro Max.
+    """
+
+    result = F.lower(F.col(column))
+
+    # Remove common storage-size expressions
+    result = F.regexp_replace(
+        result,
+        r"\b\d+\s*(gb|tb)\b",
+        " "
+    )
+
+    # Remove common color names
+    result = F.regexp_replace(
+        result,
+        r"\b(black|white|red|blue|green|yellow|purple|pink|gold|silver|gray|grey|orange|brown)\b",
+        " "
+    )
+
+    # Remove common condition phrases
+    result = F.regexp_replace(
+        result,
+        r"\b(new|used|like new|excellent condition|good condition|fair condition|mint condition)\b",
+        " "
+    )
+
+    # Normalize punctuation
+    result = F.regexp_replace(
+        result,
+        r"[^a-z0-9 ]",
+        " "
+    )
+
+    # Normalize whitespace
+    result = F.trim(
+        F.regexp_replace(result, r"\s+", " ")
+    )
+
+    return result
+
+
+df = df.withColumn(
+    "model_key",
+    normalize_model_key("title_clean")
+)
+
+
+# ============================================================
+# 6. PROTECT PRO / PRO MAX DISTINCTION
+# ============================================================
+
+print("Protecting Pro / Pro Max distinctions...")
+
+df = df.withColumn(
+    "model_key",
+    F.regexp_replace(
+        "model_key",
+        r"\bpro max\b",
+        "pro_max"
+    )
+)
+
+df = df.withColumn(
+    "model_key",
+    F.regexp_replace(
+        "model_key",
+        r"\bpro\b",
+        "pro"
+    )
+)
+
+
+# ============================================================
+# 7. REMOVE EMPTY MODEL KEYS
 # ============================================================
 
 df = df.withColumn(
     "model_key",
-    col("title_clean")
+    F.when(
+        F.length(F.trim(F.col("model_key"))) > 0,
+        F.col("model_key")
+    ).otherwise(F.lit(None))
 )
 
-# Remove storage sizes
+
+# ============================================================
+# 8. MINHASH LSH
+# ============================================================
+
+print("\nRunning MinHash LSH entity matching...")
+
+from pyspark.ml.feature import HashingTF, MinHashLSH
+
+
+# Get unique model keys only
+model_keys = (
+    df
+    .select("model_key")
+    .where(F.col("model_key").isNotNull())
+    .dropDuplicates()
+)
+
+
+# Convert model keys into token sets
+tokenized = model_keys.withColumn(
+    "tokens",
+    F.split(F.col("model_key"), " ")
+)
+
+
+hashing_tf = HashingTF(
+    inputCol="tokens",
+    outputCol="features",
+    numFeatures=1 << 18
+)
+
+hashed = hashing_tf.transform(tokenized)
+
+
+minhash = MinHashLSH(
+    inputCol="features",
+    outputCol="hashes",
+    numHashTables=3
+)
+
+minhash_model = minhash.fit(hashed)
+
+
+# Approximate similarity pairs
+similar_pairs = (
+    minhash_model.approxSimilarityJoin(
+        hashed,
+        hashed,
+        0.4,
+        distCol="JaccardDistance"
+    )
+    .select(
+        F.col("datasetA.model_key").alias("model_key_a"),
+        F.col("datasetB.model_key").alias("model_key_b"),
+        F.col("JaccardDistance")
+    )
+    .where(
+        F.col("model_key_a") != F.col("model_key_b")
+    )
+)
+
+
+print("MinHash similarity pairs generated.")
+
+
+# ============================================================
+# 9. CREATE ENTITY IDs
+# ============================================================
+
+print("\nCreating entity IDs...")
+
+# Each normalized model key gets a stable entity ID.
+# MinHash pairs are used for similarity analysis, while
+# exact normalized keys remain the canonical grouping key.
+
+entity_keys = (
+    model_keys
+    .withColumn(
+        "entity_id",
+        F.sha2(F.col("model_key"), 256)
+    )
+)
+
+
+df = (
+    df
+    .join(
+        entity_keys,
+        on="model_key",
+        how="left"
+    )
+)
+
+
+# ============================================================
+# 10. REPOST TITLE KEY
+# ============================================================
+
+print("Creating repost title keys...")
+
 df = df.withColumn(
-    "model_key",
-    regexp_replace(
-        col("model_key"),
-        r"\b(16|32|64|128|256|512)\s*gb\b",
+    "repost_title_key",
+    F.lower(F.col("title_clean"))
+)
+
+# Remove common repost wording
+df = df.withColumn(
+    "repost_title_key",
+    F.regexp_replace(
+        "repost_title_key",
+        r"\bmust go\b",
+        " "
+    )
+)
+
+df = df.withColumn(
+    "repost_title_key",
+    F.regexp_replace(
+        "repost_title_key",
+        r"\brelist\b",
+        " "
+    )
+)
+
+# Remove trailing exclamation marks
+df = df.withColumn(
+    "repost_title_key",
+    F.regexp_replace(
+        "repost_title_key",
+        r"!+$",
         ""
     )
 )
 
 df = df.withColumn(
-    "model_key",
-    regexp_replace(
-        col("model_key"),
-        r"\b(1|2)\s*tb\b",
-        ""
-    )
-)
-
-# Remove common colors
-df = df.withColumn(
-    "model_key",
-    regexp_replace(
-        col("model_key"),
-        r"\b(black|white|blue|red|green|yellow|purple|pink|gray|grey|"
-        r"silver|gold|snow|sea|charcoal|natural|tan|brown|beige)\b",
-        ""
-    )
-)
-
-# Remove common listing / condition phrases
-df = df.withColumn(
-    "model_key",
-    regexp_replace(
-        col("model_key"),
-        r"\b(like new|mint condition|excellent condition|good condition|"
-        r"fair condition|great condition|fully functional|minor scuffs|"
-        r"with box|original box|unlocked|battery health)\b",
-        ""
-    )
-)
-
-# Clean spaces
-df = df.withColumn(
-    "model_key",
-    trim(
-        regexp_replace(
-            col("model_key"),
+    "repost_title_key",
+    F.trim(
+        F.regexp_replace(
+            "repost_title_key",
             r"\s+",
             " "
         )
@@ -130,362 +329,237 @@ df = df.withColumn(
 
 
 # ============================================================
-# PROTECT PRO / PRO MAX
+# 11. SELLER + TITLE REPOST DETECTION
 # ============================================================
 
-df = df.withColumn(
-    "model_key",
-    when(
-        col("model_key").contains("pro max"),
-        regexp_replace(
-            col("model_key"),
-            r"\bpro max\b",
-            "promax"
-        )
-    ).otherwise(
-        col("model_key")
-    )
-)
+print("Detecting seller/title reposts...")
 
 
-# ============================================================
-# UNIQUE MODEL KEYS
-# ============================================================
-
-unique_models = df.select(
-    "title_clean",
-    "model_key"
-).distinct()
-
-print("\n========== UNIQUE MODELS ==========")
-
-print(
-    "Unique model keys:",
-    unique_models.select("model_key").distinct().count()
-)
-
-
-# ============================================================
-# TOKENIZE
-# ============================================================
-
-model_key_df = unique_models.withColumn(
-    "tokens",
-    array_distinct(
-        split(col("model_key"), " ")
-    )
-)
-
-
-# ============================================================
-# HASHING
-# ============================================================
-
-hashing_tf = HashingTF(
-    inputCol="tokens",
-    outputCol="features",
-    numFeatures=4096
-)
-
-model_key_df = hashing_tf.transform(model_key_df)
-
-
-# ============================================================
-# MINHASH LSH
-# ============================================================
-
-mh = MinHashLSH(
-    inputCol="features",
-    outputCol="hashes",
-    numHashTables=5
-)
-
-model = mh.fit(model_key_df)
-
-print("\n========== MINHASH LSH ==========")
-print("MinHash model created successfully.")
-
-
-# ============================================================
-# SIMILAR MODEL CANDIDATES
-# ============================================================
-
-pairs = model.approxSimilarityJoin(
-    model_key_df,
-    model_key_df,
-    0.3,
-    distCol="jaccard_distance"
-)
-
-pairs = pairs.filter(
-    col("datasetA.title_clean") <
-    col("datasetB.title_clean")
-)
-
-
-# ============================================================
-# PRO / PRO MAX PROTECTION
-# ============================================================
-
-pairs = pairs.filter(
-    ~(
-        col("datasetA.model_key").contains("pro ")
-        &
-        col("datasetB.model_key").contains("promax")
-    )
-)
-
-pairs = pairs.filter(
-    ~(
-        col("datasetA.model_key").contains("promax")
-        &
-        col("datasetB.model_key").contains("pro ")
-    )
-)
-
-
-print("\n========== SIMILAR MODEL PAIRS ==========")
-
-pairs.select(
-    col("datasetA.title_clean").alias("title_a"),
-    col("datasetB.title_clean").alias("title_b"),
-    col("datasetA.model_key").alias("model_a"),
-    col("datasetB.model_key").alias("model_b"),
-    col("jaccard_distance")
-).orderBy(
-    col("jaccard_distance").asc()
-).show(
-    30,
-    truncate=False
-)
-
-
-# ============================================================
-# CREATE ENTITY IDS
-# ============================================================
-
-window = Window.orderBy("model_key")
-
-model_entities = (
-    model_key_df
-    .select("model_key")
-    .distinct()
-    .withColumn(
-        "entity_id",
-        row_number().over(window)
-    )
-)
-
-
-# ============================================================
-# MODEL -> ENTITY
-# ============================================================
-
-model_mapping = model_entities.select(
-    "model_key",
-    "entity_id"
-)
-
-
-# ============================================================
-# TITLE -> ENTITY
-# ============================================================
-
-title_mapping = (
-    model_key_df
-    .select(
-        "title_clean",
-        "model_key"
-    )
-    .join(
-        model_mapping,
-        on="model_key",
-        how="left"
-    )
-    .select(
-        "title_clean",
-        "entity_id"
-    )
-)
-
-
-# ============================================================
-# MAP ENTITIES TO LISTINGS
-# ============================================================
-
-df = df.join(
-    title_mapping,
-    on="title_clean",
-    how="left"
-)
-
-
-# ============================================================
-# CREATE REPOST TITLE KEY
-# ============================================================
-
-# Remove known repost suffixes only for repost detection.
-# Original title_clean remains unchanged.
-
-df = df.withColumn(
-    "repost_title_key",
-    regexp_replace(
-        col("title_clean"),
-        r"\s*(must go|relist)\s*$",
-        ""
-    )
-)
-
-df = df.withColumn(
-    "repost_title_key",
-    regexp_replace(
-        col("repost_title_key"),
-        r"\s*!+\s*$",
-        ""
-    )
-)
-
-df = df.withColumn(
-    "repost_title_key",
-    trim(col("repost_title_key"))
-)
-
-
-# ============================================================
-# REPOST DETECTION
-# ============================================================
-
-print("\n========== REPOST DETECTION ==========")
-
-# Repost requires:
-# - same seller
-# - same normalized / near-identical title
-# - 1 to 14 days after previous listing
-#
-# Ground truth is NOT used.
-
-repost_window = (
+window_spec = (
     Window
     .partitionBy(
         "seller_id",
         "repost_title_key"
     )
     .orderBy(
-        "posted_date"
+        F.col("posted_date").asc()
     )
 )
+
 
 df = df.withColumn(
     "previous_posted_date",
-    lag("posted_date").over(repost_window)
+    F.lag("posted_date").over(window_spec)
 )
+
+
+# Determine whether listing is a repost.
+#
+# A listing is treated as a repost when:
+# - seller_id exists
+# - current posted_date exists
+# - previous posted_date exists
+# - previous listing is within 1-14 days
 
 df = df.withColumn(
-    "days_since_previous",
-    datediff(
-        col("posted_date"),
-        col("previous_posted_date")
-    )
+    "is_repost",
+    F.when(
+        (
+            F.col("seller_id").isNotNull()
+            & F.col("posted_date").isNotNull()
+            & F.col("previous_posted_date").isNotNull()
+            & (
+                F.datediff(
+                    F.col("posted_date"),
+                    F.col("previous_posted_date")
+                ).between(1, 14)
+            )
+        ),
+        F.lit(True)
+    ).otherwise(F.lit(False))
 )
+
+
+# ============================================================
+# 12. ORIGINAL LISTING ID
+# ============================================================
 
 df = df.withColumn(
-    "predicted_is_repost",
-    when(
-        col("seller_id").isNotNull()
-        &
-        col("posted_date").isNotNull()
-        &
-        col("previous_posted_date").isNotNull()
-        &
-        (col("days_since_previous") >= 1)
-        &
-        (col("days_since_previous") <= 14),
-        1
-    ).otherwise(0)
-)
-
-
-# ============================================================
-# ORIGINAL LISTING
-# ============================================================
-
-original_window = (
-    Window
-    .partitionBy(
-        "seller_id",
-        "repost_title_key"
-    )
-    .orderBy(
-        "posted_date"
+    "original_listing_id",
+    F.first(
+        "listing_id",
+        ignorenulls=True
+    ).over(
+        window_spec.rowsBetween(
+            Window.unboundedPreceding,
+            Window.unboundedFollowing
+        )
     )
 )
 
+
+# For non-reposts, the listing itself is the original.
 df = df.withColumn(
-    "predicted_original_listing_id",
-    first_value("listing_id").over(
-        original_window
+    "original_listing_id",
+    F.when(
+        F.col("is_repost") == True,
+        F.col("original_listing_id")
+    ).otherwise(
+        F.col("listing_id")
     )
 )
 
 
 # ============================================================
-# RESULTS
-# ============================================================
-
-print(
-    "Detected reposts:",
-    df.filter(
-        col("predicted_is_repost") == 1
-    ).count()
-)
-
-print(
-    "Unique Entities:",
-    df.select("entity_id").distinct().count()
-)
-
-print(
-    "Listings with Entity ID:",
-    df.filter(
-        col("entity_id").isNotNull()
-    ).count()
-)
-
-
-# ============================================================
-# REMOVE TEMPORARY COLUMNS
+# 13. REMOVE TEMPORARY COLUMNS
 # ============================================================
 
 df = df.drop(
-    "model_key",
-    "repost_title_key",
     "previous_posted_date",
-    "days_since_previous"
+    "repost_title_key"
 )
 
 
 # ============================================================
-# SAVE OUTPUT
+# 14. SELECT FINAL OUTPUT COLUMNS
 # ============================================================
 
-print("\n========== SAVING OUTPUT ==========")
+print("\nPreparing final entity-resolved dataset...")
 
-df.write.mode(
-    "overwrite"
-).parquet(
-    OUTPUT_PATH
+final_columns = [
+    "listing_id",
+    "title",
+    "description",
+    "price",
+    "price_raw",
+    "currency",
+    "category",
+    "sub_category",
+    "category_full",
+    "item_condition_id",
+    "brand_name",
+    "shipping",
+    "posted_date",
+    "delisted_date",
+    "location_city",
+    "location_region",
+    "seller_type",
+    "seller_id",
+    "source_platform",
+    "title_clean",
+    "description_clean",
+    "model_key",
+    "entity_id",
+    "is_repost",
+    "original_listing_id"
+]
+
+# Keep only columns that actually exist
+final_columns = [
+    c for c in final_columns
+    if c in df.columns
+]
+
+df_final = df.select(*final_columns)
+
+
+# ============================================================
+# 15. OUTPUT SUMMARY
+# ============================================================
+
+print("\n========== ENTITY RESOLUTION SUMMARY ==========")
+
+print("Input records:")
+print(df.count())
+
+print("\nOutput columns:")
+print(df_final.columns)
+
+print("\nRepost statistics:")
+
+repost_stats = (
+    df_final
+    .groupBy("is_repost")
+    .count()
+    .orderBy("is_repost")
+)
+
+repost_stats.show()
+
+
+print("\nEntity count:")
+
+entity_count = (
+    df_final
+    .select("entity_id")
+    .where(F.col("entity_id").isNotNull())
+    .distinct()
+    .count()
+)
+
+print(entity_count)
+
+
+# ============================================================
+# 16. SAMPLE
+# ============================================================
+
+print("\nSample entity-resolved records:")
+
+df_final.select(
+    "listing_id",
+    "title",
+    "model_key",
+    "entity_id",
+    "is_repost",
+    "original_listing_id"
+).show(10, truncate=False)
+
+
+# ============================================================
+# 17. REMOVE OLD OUTPUT
+# ============================================================
+
+if os.path.exists(OUTPUT_PATH):
+    print("\nRemoving existing output...")
+    shutil.rmtree(OUTPUT_PATH)
+
+
+# ============================================================
+# 18. WRITE OUTPUT
+# ============================================================
+
+print("\nWriting entity-resolved Parquet output:")
+
+print(OUTPUT_PATH)
+
+(
+    df_final
+    .repartition(8)
+    .write
+    .mode("overwrite")
+    .parquet(OUTPUT_PATH)
 )
 
 
-print("\nSUCCESS!")
+# ============================================================
+# 19. FINAL VERIFICATION
+# ============================================================
 
-print(
-    "Entity-resolved dataset saved to:"
-)
+print("\nVerifying output...")
 
-print(
-    OUTPUT_PATH
-)
+output_df = spark.read.parquet(OUTPUT_PATH)
 
+output_count = output_df.count()
+
+print("Output records:", output_count)
+
+print("\nOutput location:")
+print(OUTPUT_PATH)
+
+
+print("\n==============================================")
+print("STAGE 2 ENTITY RESOLUTION COMPLETE")
+print("==============================================")
 
 spark.stop()

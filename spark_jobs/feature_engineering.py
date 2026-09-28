@@ -1,51 +1,96 @@
-from pathlib import Path
+import os
+import shutil
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col,
-    avg,
-    count,
-    datediff,
-    when,
-    round,
-    percentile_approx,
-    stddev,
-    min as spark_min,
-    max as spark_max,
-    months_between,
-    floor
-)
-from pyspark.sql.window import Window
+from pyspark.sql import functions as F
 
 
 # ============================================================
-# PATHS
+# 1. PROJECT PATH
 # ============================================================
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-INPUT_PATH = str(
-    BASE_DIR
-    / "data"
-    / "processed"
-    / "entity_resolved.parquet"
+PROJECT_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..")
 )
 
-OUTPUT_DIR = BASE_DIR / "data" / "curated"
+
+# ============================================================
+# 2. WINDOWS HADOOP SETUP
+# ============================================================
+
+HADOOP_HOME = os.path.join(PROJECT_ROOT, "hadoop")
+
+os.environ["HADOOP_HOME"] = HADOOP_HOME
+os.environ["hadoop.home.dir"] = HADOOP_HOME
+
+HADOOP_BIN = os.path.join(HADOOP_HOME, "bin")
+
+if HADOOP_BIN not in os.environ["PATH"]:
+    os.environ["PATH"] = (
+        HADOOP_BIN
+        + os.pathsep
+        + os.environ["PATH"]
+    )
 
 
 # ============================================================
-# SPARK SESSION
+# 3. PATHS
+# ============================================================
+
+INPUT_PATH = os.path.join(
+    PROJECT_ROOT,
+    "data",
+    "processed",
+    "entity_resolved.parquet"
+)
+
+CURATED_DIR = os.path.join(
+    PROJECT_ROOT,
+    "data",
+    "curated"
+)
+
+DEPRECIATION_PATH = os.path.join(
+    CURATED_DIR,
+    "depreciation_curve_curated.parquet"
+)
+
+VELOCITY_PATH = os.path.join(
+    CURATED_DIR,
+    "resale_velocity_curated.parquet"
+)
+
+REGIONAL_PATH = os.path.join(
+    CURATED_DIR,
+    "regional_price_variance_curated.parquet"
+)
+
+
+# ============================================================
+# 4. CREATE CURATED DIRECTORY
+# ============================================================
+
+os.makedirs(CURATED_DIR, exist_ok=True)
+
+
+# ============================================================
+# 5. SPARK SESSION
 # ============================================================
 
 spark = (
     SparkSession.builder
     .appName("ResellRadar-FeatureEngineering")
     .master("local[*]")
+    .config("spark.driver.memory", "4g")
+    .config("spark.executor.memory", "4g")
+    .config("spark.hadoop.io.native.lib.available", "false")
     .config(
-        "spark.hadoop.io.native.lib.available",
-        "false"
+        "spark.hadoop.fs.file.impl",
+        "org.apache.hadoop.fs.RawLocalFileSystem"
     )
+    .config("spark.sql.adaptive.enabled", "true")
+    .config("spark.sql.shuffle.partitions", "16")
+    .config("spark.sql.debug.maxToStringFields", "200")
     .getOrCreate()
 )
 
@@ -53,364 +98,304 @@ spark.sparkContext.setLogLevel("ERROR")
 
 
 # ============================================================
-# READ DATA
+# 6. READ ENTITY-RESOLVED DATA
 # ============================================================
 
-print("Reading:")
+print("=" * 60)
+print("STAGE 3: FEATURE ENGINEERING")
+print("=" * 60)
+
+print("\nReading:")
 print(INPUT_PATH)
 
 df = spark.read.parquet(INPUT_PATH)
 
-print("\n========== DATASET ==========")
+print("\nInput records:")
+print(df.count())
 
-total_records = df.count()
-
-print("Total Records:", total_records)
+print("\nInput columns:")
+print(df.columns)
 
 
 # ============================================================
-# RESALE DURATION
+# 7. DEPRECIATION CURVE
 # ============================================================
 
-df = df.withColumn(
-    "resale_duration_days",
-    when(
-        col("delisted_date").isNotNull(),
-        datediff(
-            col("delisted_date"),
-            col("posted_date")
-        )
+print("\n----------------------------------------------")
+print("Creating depreciation curve...")
+print("----------------------------------------------")
+
+depreciation_df = (
+    df
+    .filter(
+        F.col("posted_date").isNotNull()
+        & F.col("price").isNotNull()
+        & (F.col("price") > 0)
     )
-)
-
-
-# ============================================================
-# DEPRECIATION CURVE
-# ============================================================
-
-print("\n========== DEPRECIATION CURVE ==========")
-
-
-# Find the first observed listing date for every entity
-entity_window = Window.partitionBy("entity_id")
-
-df = df.withColumn(
-    "entity_first_posted_date",
-    spark_min("posted_date").over(entity_window)
-)
-
-
-# Calculate listing age in months
-df = df.withColumn(
-    "listing_age_months",
-    floor(
-        months_between(
-            col("posted_date"),
-            col("entity_first_posted_date")
-        )
+    .withColumn(
+        "posted_year",
+        F.year("posted_date")
     )
-)
-
-
-# Prevent negative values
-df = df.withColumn(
-    "listing_age_months",
-    when(
-        col("listing_age_months") < 0,
-        0
-    ).otherwise(
-        col("listing_age_months")
+    .groupBy(
+        "category",
+        "posted_year"
     )
-)
-
-
-# Aggregate price by entity and listing age
-depreciation_curve = df.groupBy(
-    "entity_id",
-    "listing_age_months"
-).agg(
-    count("*").alias(
-        "listing_count"
-    ),
-    round(
-        avg("price"),
-        2
-    ).alias(
-        "average_price"
-    ),
-    round(
-        percentile_approx(
-            "price",
-            0.5
-        ),
-        2
-    ).alias(
-        "median_price"
-    )
-)
-
-
-# ============================================================
-# CORRECT BASELINE PRICE
-# ============================================================
-
-# Baseline = average price at age 0
-baseline_prices = depreciation_curve.filter(
-    col("listing_age_months") == 0
-).select(
-    "entity_id",
-    col("average_price").alias(
-        "baseline_price"
-    )
-)
-
-
-# Join baseline price back to every age group
-depreciation_curve = depreciation_curve.join(
-    baseline_prices,
-    on="entity_id",
-    how="left"
-)
-
-
-# ============================================================
-# PRICE CHANGE %
-# ============================================================
-
-depreciation_curve = depreciation_curve.withColumn(
-    "price_change_percent",
-    when(
-        col("baseline_price") > 0,
-        round(
-            (
-                (
-                    col("average_price")
-                    - col("baseline_price")
-                )
-                / col("baseline_price")
-            ) * 100,
+    .agg(
+        F.count("*").alias("listing_count"),
+        F.round(
+            F.avg("price"),
             2
+        ).alias("average_price"),
+        F.round(
+            F.min("price"),
+            2
+        ).alias("min_price"),
+        F.round(
+            F.max("price"),
+            2
+        ).alias("max_price")
+    )
+    .orderBy(
+        "category",
+        "posted_year"
+    )
+)
+
+
+print("Depreciation rows:")
+print(depreciation_df.count())
+
+
+# ============================================================
+# 8. RESALE VELOCITY
+# ============================================================
+
+print("\n----------------------------------------------")
+print("Creating resale velocity...")
+print("----------------------------------------------")
+
+velocity_base = (
+    df
+    .filter(
+        F.col("posted_date").isNotNull()
+        & F.col("delisted_date").isNotNull()
+    )
+    .withColumn(
+        "days_to_resale",
+        F.datediff(
+            F.col("delisted_date"),
+            F.col("posted_date")
         )
-    ).otherwise(
-        None
+    )
+    .filter(
+        (F.col("days_to_resale") >= 0)
+        & (F.col("days_to_resale") <= 3650)
     )
 )
 
 
-# Sort output
-depreciation_curve = depreciation_curve.orderBy(
-    "entity_id",
-    "listing_age_months"
+velocity_df = (
+    velocity_base
+    .groupBy(
+        "category",
+        "source_platform"
+    )
+    .agg(
+        F.count("*").alias("resale_count"),
+        F.round(
+            F.avg("days_to_resale"),
+            2
+        ).alias("average_days_to_resale"),
+        F.round(
+            F.expr("percentile_approx(days_to_resale, 0.5)"),
+            2
+        ).alias("median_days_to_resale"),
+        F.round(
+            F.min("days_to_resale"),
+            2
+        ).alias("min_days_to_resale"),
+        F.round(
+            F.max("days_to_resale"),
+            2
+        ).alias("max_days_to_resale")
+    )
+    .orderBy(
+        "category",
+        "source_platform"
+    )
 )
 
 
-print("Depreciation curve created.")
+print("Resale velocity rows:")
+print(velocity_df.count())
 
-depreciation_curve.show(
-    20,
-    truncate=False
+
+# ============================================================
+# 9. REGIONAL PRICE VARIANCE
+# ============================================================
+
+print("\n----------------------------------------------")
+print("Creating regional price variance...")
+print("----------------------------------------------")
+
+regional_df = (
+    df
+    .filter(
+        F.col("location_region").isNotNull()
+        & F.col("price").isNotNull()
+        & (F.col("price") > 0)
+    )
+    .groupBy(
+        "location_region",
+        "category"
+    )
+    .agg(
+        F.count("*").alias("listing_count"),
+        F.round(
+            F.avg("price"),
+            2
+        ).alias("average_price"),
+        F.round(
+            F.stddev("price"),
+            2
+        ).alias("price_stddev"),
+        F.round(
+            F.variance("price"),
+            2
+        ).alias("price_variance"),
+        F.round(
+            F.min("price"),
+            2
+        ).alias("min_price"),
+        F.round(
+            F.max("price"),
+            2
+        ).alias("max_price")
+    )
+    .orderBy(
+        "location_region",
+        "category"
+    )
+)
+
+
+print("Regional variance rows:")
+print(regional_df.count())
+
+
+# ============================================================
+# 10. REMOVE OLD OUTPUTS
+# ============================================================
+
+print("\nRemoving previous curated outputs if present...")
+
+for path in [
+    DEPRECIATION_PATH,
+    VELOCITY_PATH,
+    REGIONAL_PATH
+]:
+    if os.path.exists(path):
+        shutil.rmtree(path)
+
+
+# ============================================================
+# 11. WRITE DEPRECIATION CURVE
+# ============================================================
+
+print("\nWriting:")
+print(DEPRECIATION_PATH)
+
+(
+    depreciation_df
+    .coalesce(1)
+    .write
+    .mode("overwrite")
+    .parquet(DEPRECIATION_PATH)
 )
 
 
 # ============================================================
-# RESALE VELOCITY
+# 12. WRITE RESALE VELOCITY
 # ============================================================
 
-print("\n========== RESALE VELOCITY ==========")
+print("\nWriting:")
+print(VELOCITY_PATH)
 
-velocity = df.filter(
-    col("resale_duration_days").isNotNull()
-).groupBy(
-    "entity_id"
-).agg(
-    count("*").alias(
-        "delisted_listings"
-    ),
-    round(
-        avg("resale_duration_days"),
-        2
-    ).alias(
-        "avg_resale_days"
-    ),
-    round(
-        percentile_approx(
-            "resale_duration_days",
-            0.5
-        ),
-        2
-    ).alias(
-        "median_resale_days"
-    )
-)
-
-
-velocity = velocity.orderBy(
-    col("avg_resale_days").asc()
-)
-
-
-print("Resale velocity table created.")
-
-velocity.show(
-    20,
-    truncate=False
+(
+    velocity_df
+    .coalesce(1)
+    .write
+    .mode("overwrite")
+    .parquet(VELOCITY_PATH)
 )
 
 
 # ============================================================
-# REGIONAL PRICE VARIANCE
+# 13. WRITE REGIONAL PRICE VARIANCE
 # ============================================================
 
-print("\n========== REGIONAL PRICE VARIANCE ==========")
+print("\nWriting:")
+print(REGIONAL_PATH)
 
-regional = df.groupBy(
-    "entity_id",
-    "location_region"
-).agg(
-    count("*").alias(
-        "listing_count"
-    ),
-    round(
-        avg("price"),
-        2
-    ).alias(
-        "average_price"
-    ),
-    round(
-        stddev("price"),
-        2
-    ).alias(
-        "price_stddev"
-    )
-)
-
-
-regional_window = Window.partitionBy(
-    "entity_id"
-)
-
-
-# Minimum regional average price
-regional = regional.withColumn(
-    "min_regional_price",
-    round(
-        spark_min(
-            "average_price"
-        ).over(regional_window),
-        2
-    )
-)
-
-
-# Maximum regional average price
-regional = regional.withColumn(
-    "max_regional_price",
-    round(
-        spark_max(
-            "average_price"
-        ).over(regional_window),
-        2
-    )
-)
-
-
-# Regional price range
-regional = regional.withColumn(
-    "regional_price_range",
-    round(
-        col("max_regional_price")
-        - col("min_regional_price"),
-        2
-    )
-)
-
-
-print("Regional price variance table created.")
-
-regional.show(
-    20,
-    truncate=False
+(
+    regional_df
+    .coalesce(1)
+    .write
+    .mode("overwrite")
+    .parquet(REGIONAL_PATH)
 )
 
 
 # ============================================================
-# SAVE CURATED DATA
+# 14. VERIFY OUTPUTS
 # ============================================================
 
-print("\n========== SAVING CURATED DATA ==========")
+print("\n==============================================")
+print("FINAL VERIFICATION")
+print("==============================================")
 
 
-OUTPUT_DIR.mkdir(
-    parents=True,
-    exist_ok=True
-)
+print("\nDepreciation curve:")
+dep_check = spark.read.parquet(DEPRECIATION_PATH)
+print("Records:", dep_check.count())
 
 
-# Depreciation curve
-depreciation_curve.write.mode(
-    "overwrite"
-).parquet(
-    str(
-        OUTPUT_DIR
-        / "depreciation_curve_curated.parquet"
-    )
-)
+print("\nResale velocity:")
+velocity_check = spark.read.parquet(VELOCITY_PATH)
+print("Records:", velocity_check.count())
 
 
-# Resale velocity
-velocity.write.mode(
-    "overwrite"
-).parquet(
-    str(
-        OUTPUT_DIR
-        / "resale_velocity_curated.parquet"
-    )
-)
-
-
-# Regional price variance
-regional.write.mode(
-    "overwrite"
-).parquet(
-    str(
-        OUTPUT_DIR
-        / "regional_price_variance_curated.parquet"
-    )
-)
+print("\nRegional price variance:")
+regional_check = spark.read.parquet(REGIONAL_PATH)
+print("Records:", regional_check.count())
 
 
 # ============================================================
-# SUCCESS
+# 15. SHOW SAMPLES
 # ============================================================
 
-print("\nSUCCESS!")
+print("\n========== DEPRECIATION SAMPLE ==========")
+dep_check.show(10, truncate=False)
 
-print(
-    "Depreciation curve saved to:"
-)
+print("\n========== RESALE VELOCITY SAMPLE ==========")
+velocity_check.show(10, truncate=False)
 
-print(
-    OUTPUT_DIR
-    / "depreciation_curve_curated.parquet"
-)
+print("\n========== REGIONAL VARIANCE SAMPLE ==========")
+regional_check.show(10, truncate=False)
 
-print(
-    "\nResale velocity saved to:"
-)
 
-print(
-    OUTPUT_DIR
-    / "resale_velocity_curated.parquet"
-)
+# ============================================================
+# 16. COMPLETE
+# ============================================================
 
-print(
-    "\nRegional price variance saved to:"
-)
+print("\n==============================================")
+print("STAGE 3 FEATURE ENGINEERING COMPLETE")
+print("==============================================")
 
-print(
-    OUTPUT_DIR
-    / "regional_price_variance_curated.parquet"
-)
+print("\nOutputs:")
 
+print(DEPRECIATION_PATH)
+print(VELOCITY_PATH)
+print(REGIONAL_PATH)
 
 spark.stop()
