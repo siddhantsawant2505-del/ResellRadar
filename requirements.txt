@@ -8,3 +8,6 @@ pydantic>=2.6.0
 python-multipart>=0.0.9
 pyspark==4.2.0
 numpy
+psutil
+kaggle
+py7zr

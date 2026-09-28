@@ -135,11 +135,14 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface text-on-surface">
+    <div className="min-h-screen flex flex-col bg-surface text-foreground">
       <HeaderNav state={serverState} onRefresh={fetchStatus} />
 
       <main className="flex-1 p-4 md:p-6 max-w-[1700px] w-full mx-auto space-y-6">
-        {/* Top Section: Controller & Live Log Terminal */}
+        {/* Level 1: Telemetry Headline KPIs (F-pattern scan) */}
+        <LiveMetricsPanel metrics={metrics} />
+
+        {/* Level 2: Controller & Live Log Terminal */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-5">
             <JobTriggerPanel isRunning={isRunning} onStart={handleStartScrape} onStop={handleStopScrape} />
@@ -149,13 +152,10 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Telemetry KPI Cards */}
-        <LiveMetricsPanel metrics={metrics} />
-
-        {/* HDFS Sync Control */}
+        {/* Level 3: HDFS Sync Control */}
         <HDFSPanel hdfsData={serverState?.hdfs_telemetry || {}} onSync={handleSyncHDFS} />
 
-        {/* Raw Ingestion Stream Grid */}
+        {/* Level 3: Raw Ingestion Stream Grid */}
         <RawDataGrid
           items={gridData.items}
           total={gridData.total}
@@ -175,7 +175,7 @@ export default function Home() {
       </main>
 
       <footer className="border-t border-outline-variant bg-surface-lowest px-6 py-3 text-center text-xs font-mono text-outline">
-        ResellRadar Data Ingestion Pipeline // Person 1 — Data Engineering Layer // HDFS Target: <code>/data/raw/</code>
+        ResellRadar Data Ingestion Pipeline &middot; Data Engineering Layer &middot; HDFS target: <code>/data/raw/</code>
       </footer>
     </div>
   );

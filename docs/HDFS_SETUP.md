@@ -1,173 +1,80 @@
-# Hadoop / HDFS Pseudo-Distributed Cluster Setup (Person 1)
+# Real HDFS on Docker (Windows 11) — setup & run guide
 
-Person 1's ingestion layer lands raw listing batches in HDFS under `/data/raw/`
-via [`hdfs_uploader.py`](../hdfs_uploader.py). This guide sets up the local
-pseudo-distributed Hadoop cluster that `hdfs_uploader.py` targets, and pairs
-with [`SPARK_SETUP.md`](SPARK_SETUP.md) (Person 2) for the processing layer.
+Single-node **pseudo-distributed HDFS** in Docker: one NameNode + one DataNode using the
+official `apache/hadoop:3` image (3.3.6). This replaces the earlier emulated push —
+there is **no emulation fallback**: if no live cluster is reachable,
+`scripts/push_to_hdfs.py` exits non-zero with a loud error.
 
-> Companion deliverable: `python -m scraper.validator` then
-> `python -m scraper.jsonl_converter` close the Person 1 → Person 2 handoff.
+## Cluster contract (team decision)
 
----
+| Setting | Value | Where enforced |
+|---|---|---|
+| Replication factor | **1** | `docker/hadoop/hdfs-site.xml` (`dfs.replication`) |
+| Block size | **64 MB** (67,108,864 B) | `docker/hadoop/hdfs-site.xml` (`dfs.blocksize`) |
+| NameNode storage | volume `hdfs_namenode` → `/hadoop/dfs/name` | `hdfs-site.xml` + compose volumes |
+| DataNode storage | volume `hdfs_datanode` → `/hadoop/dfs/data` | `hdfs-site.xml` + compose volumes |
+| Permissions | off (single-user mini cluster) | `dfs.permissions.enabled=false` |
 
-## 1. Prerequisites
+Ports on localhost: **9870** NameNode Web UI / WebHDFS, **9000** HDFS RPC, 9864 DataNode UI.
 
-| Component | Version | Notes |
-| --------- | ------- | ----- |
-| Java      | JDK 8 or 11 | Hadoop 3.x runs best on 8/11 (Person 2's Spark uses Java 19 separately) |
-| Hadoop    | 3.3.x   | Binary tarball from https://hadoop.apache.org/releases.html |
-| OS        | Windows / Linux | Windows needs `winutils.exe` + `hadoop.dll` matching the Hadoop version |
+## Prerequisites (one-time)
 
-Unzip/extract Hadoop to a directory, e.g. `C:\hadoop` (Windows) or
-`/opt/hadoop` (Linux). On Windows also place `winutils.exe` and `hadoop.dll`
-in `C:\hadoop\bin`.
+1. **Docker Desktop** with the WSL-2 backend (already installed on this machine;
+   docker.exe lives at `C:\Program Files\Docker\Docker\resources\bin\docker.exe` — add it
+   to PATH or use the full path). Verify: `docker version` → Server version prints.
+2. Nothing else — Hadoop itself runs entirely inside the containers.
 
----
-
-## 2. Environment Variables
-
-PowerShell (Windows):
-
-```powershell
-$env:JAVA_HOME = "C:\Program Files\Java\jdk-11"
-$env:HADOOP_HOME = "C:\hadoop"
-$env:HADOOP_CONF_DIR = "C:\hadoop\etc\hadoop"
-$env:PATH = "C:\hadoop\bin;$env:PATH"
-```
-
-Linux (bash):
+## Start the cluster
 
 ```bash
-export JAVA_HOME=/usr/lib/jvm/java-11-openjdk
-export HADOOP_HOME=/opt/hadoop
-export PATH=$HADOOP_HOME/bin:$PATH
+docker compose -f docker-compose.yml up -d          # first start formats the NameNode once
+docker ps                                           # wait for: namenode (healthy), datanode (up)
+docker exec resellradar-namenode hdfs dfsadmin -report   # "Live datanodes (1)"
 ```
 
-Verify:
+Web UI: http://localhost:9870 → Utilities ▸ Browse the file system.
+
+## Push the raw zone (real upload)
 
 ```bash
-hadoop version
+python scripts/push_to_hdfs.py --fresh        # --fresh: ignore stale sync manifests
 ```
 
----
+- Mode is auto-detected: HDFS CLI via `docker exec` (preferred) → WebHDFS → local `hdfs`.
+  The docker-CLI path wins because host-side WebHDFS writes get redirected to the
+  datanode's container hostname, which Windows can't resolve.
+- Uploads `data/raw/mercari/` → `/data/raw/mercari/` and
+  `data/raw/generated/run=<ts>/` → `/data/raw/generated/run=<ts>/` (partition preserved).
+- Every file is logged to `logs/ingestion.log` with record count, bytes, and block count.
 
-## 3. Core Configuration Files (`etc/hadoop/`)
-
-### `core-site.xml`
-
-```xml
-<configuration>
-  <property>
-    <name>fs.defaultFS</name>
-    <value>hdfs://localhost:9000</value>
-  </property>
-</configuration>
-```
-
-### `hdfs-site.xml`
-
-```xml
-<configuration>
-  <property>
-    <name>dfs.replication</name>
-    <value>1</value>
-  </property>
-  <property>
-    <name>dfs.namenode.name.dir</name>
-    <value>file:///C:/hadoop/data/namenode</value>
-  </property>
-  <property>
-    <name>dfs.datanode.data.dir</name>
-    <value>file:///C:/hadoop/data/datanode</value>
-  </property>
-  <property>
-    <name>dfs.webhdfs.enabled</name>
-    <value>true</value>
-  </property>
-</configuration>
-```
-
-`dfs.webhdfs.enabled=true` is required — `hdfs_uploader.py` prefers the
-WebHDFS REST API on port **9870** (Hadoop 3.x).
-
-### `mapred-site.xml` / `yarn-site.xml`
-
-Not required for this pipeline (HDFS storage only); Spark runs `local[*]`.
-
----
-
-## 4. Format the NameNode & Start Daemons
-
-First start only (skippable afterwards):
+## Capture the proof artifact
 
 ```bash
-hdfs namenode -format
+# IMPORTANT (Git Bash/MSYS): disable path mangling or '/data/raw' becomes 'C:/.../data/raw'
+export MSYS2_ARG_CONV_EXCL="*" MSYS_NO_PATHCONV=1
+docker exec resellradar-namenode hdfs dfs -ls -R /data/raw
+docker exec resellradar-namenode hdfs dfs -du -h /data/raw
+docker exec resellradar-namenode hdfs fsck /data/raw -files -blocks
 ```
 
-Start the cluster:
+The committed snapshot of all three commands lives in `logs/hdfs_proof.txt`
+(ends with `The filesystem under path '/data/raw' is HEALTHY`).
+
+## Stop / reset
 
 ```bash
-# Windows:
-%HADOOP_HOME%\sbin\start-dfs.cmd
-# Linux:
-$HADOOP_HOME/sbin/start-dfs.sh
+docker compose -f docker-compose.yml down        # stop; volumes keep the data
+docker compose -f docker-compose.yml down -v     # stop AND wipe HDFS (fresh cluster)
 ```
 
-Verify — NameNode web UI at http://localhost:9870 should show live datanodes:
+If containers won't start: `docker logs resellradar-namenode` first. The classic
+failure is an unformatted NameNode (`InconsistentFSStateException`) — the compose
+command formats once when `/hadoop/dfs/name/current/VERSION` is missing, so this only
+happens if the volume was wiped mid-flight; `down -v` + `up -d` resets cleanly.
 
-```bash
-hdfs dfsadmin -report
-hdfs dfs -mkdir -p /data/raw
-hdfs dfs -ls /data
-```
+## Fail-loudly behavior
 
----
-
-## 5. Push the Raw Data Lake to HDFS
-
-```bash
-python hdfs_uploader.py
-```
-
-`hdfs_uploader.py` auto-detects, in order:
-1. **WebHDFS** (`http://localhost:9870`) — used when the NameNode is live
-2. **HDFS CLI** (`hdfs dfs -put`) — fallback
-3. **Pseudo-HDFS emulation** — catalogs files locally with a sync manifest
-   (`data/hdfs_sync_manifest.json`) when no daemons are running
-
-Files already pushed are tracked in the manifest, so re-running is idempotent.
-
----
-
-## 6. Full Ingestion Deliverable Run (50k+ listings)
-
-```bash
-# 1. Generate the raw batches (50,000+ listings into data/raw/)
-python -c "from scraper.generator import generate_batch; generate_batch(count=50000, category='all')"
-
-# 2. Validate against the schema contract (quality gate)
-python -m scraper.validator
-
-# 3. Push raw JSON to HDFS /data/raw/
-python hdfs_uploader.py
-
-# 4. Convert raw JSON -> JSONL for Person 2's Spark pipeline
-python -m scraper.jsonl_converter
-# -> data/processed/raw_listings.jsonl
-```
-
-Step 4 output is the exact input path Person 2's
-`spark_jobs/clean_normalize.py` expects — the joint Person 1 → Person 2
-checkpoint is now a two-command step.
-
----
-
-## 7. Troubleshooting
-
-| Symptom | Fix |
-| ------- | --- |
-| `hdfs_uploader.py` reports `EMULATED_MODE` | NameNode not running or WebHDFS disabled — check http://localhost:9870 and `dfs.webhdfs.enabled` |
-| Datanode starts then dies (Windows) | `winutils.exe`/`hadoop.dll` version mismatch with Hadoop, or `JAVA_HOME` unset |
-| `dfs.namenode.name.dir` permission errors | Pre-create the dirs and use forward-slash `file:///` URIs exactly as above |
-| WebHDFS 403 on upload | Ensure `hdfs dfs -mkdir -p /data/raw` was run and the `user` in `hdfs_uploader.py` has write access |
-| Manifest says pushed but HDFS empty | Manifest is local state — delete `data/hdfs_sync_manifest.json` and re-run to force a clean sync |
+`scripts/push_to_hdfs.py` probes the cluster before pushing anything. If neither the
+docker-exec CLI, WebHDFS, nor a local `hdfs` binary answers, it prints a FATAL banner
+with startup instructions and exits with code **2** — it never cataloged files as
+"pushed" without a real cluster (the old EMULATED mode is gone).

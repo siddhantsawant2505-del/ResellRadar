@@ -6,8 +6,8 @@
 
 @layer base {
   body {
-    background-color: #0f131c;
-    color: #dfe2ee;
+    background-color: #13110f;
+    color: #d4cfc9;
     font-family: 'Inter', sans-serif;
   }
 }
@@ -15,8 +15,8 @@
 .telemetry-grid {
   background-size: 24px 24px;
   background-image: 
-    linear-gradient(to right, rgba(61, 73, 76, 0.15) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(61, 73, 76, 0.15) 1px, transparent 1px);
+    linear-gradient(to right, rgba(92, 84, 80, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(92, 84, 80, 0.12) 1px, transparent 1px);
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -25,13 +25,32 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #0a0e16;
+  background: #0e0d0b;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #3d494c;
+  background: #5c5450;
+  border-radius: 2px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #4cd7f6;
+  background: #e8a733;
+}
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.status-pulse {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+@keyframes modal-enter {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.modal-enter {
+  animation: modal-enter 200ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
 }

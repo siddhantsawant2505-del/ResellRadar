@@ -13,14 +13,26 @@ __pycache__/
 htmlcov/
 *.log
 
-# Raw Data Lake Files (50k+ large JSON outputs)
-data/raw/*.json
-!data/raw/.gitkeep
+# Data Lake Zones (Mercari TSV + generated JSONL; GB-scale, never commit)
+data/raw/**
+!data/raw/mercari/.gitkeep
+!data/raw/generated/.gitkeep
+data/seed/**
+!data/seed/.gitkeep
+data/*.7z
+data/*.zip
+data/*.tsv
+data/*.csv
 data/processed/*
 !data/processed/.gitkeep
 data/curated/*
 !data/curated/.gitkeep
 data/hdfs_sync_manifest.json
+
+# Ground truth (evaluation key for entity resolution; outside the raw zone by design)
+data/ground_truth/**
+!data/ground_truth/.gitkeep
+data/ground_truth_smoke/**
 
 # Next.js Node & Build Directories
 node_modules/

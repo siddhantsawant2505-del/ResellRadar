@@ -1,0 +1,277 @@
+ResellRadar - HDFS ingestion proof (REAL cluster, no emulation)
+Captured : 2026-09-28T15:33:06Z
+Cluster  : apache/hadoop:3 - namenode(resellradar-namenode) + datanode(resellradar-datanode)
+Contract : dfs.replication=1, dfs.blocksize=64MB (67108864)
+Uploaded : data/raw/mercari + data/raw/generated -> /data/raw (51 files, 650.7 MB, see logs/ingestion.log)
+
+======================================================================
+$ hdfs dfs -ls -R /data/raw
+======================================================================
+drwxr-xr-x   - root supergroup          0 2026-09-28 15:27 /data/raw/generated
+drwxr-xr-x   - root supergroup          0 2026-09-28 15:32 /data/raw/generated/run=2026_09_28T150245Z
+-rw-r--r--   1 root supergroup    6251341 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch001.jsonl
+-rw-r--r--   1 root supergroup    6258551 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch002.jsonl
+-rw-r--r--   1 root supergroup    6259246 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch003.jsonl
+-rw-r--r--   1 root supergroup    6262849 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch004.jsonl
+-rw-r--r--   1 root supergroup    6252233 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch005.jsonl
+-rw-r--r--   1 root supergroup    6255712 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch006.jsonl
+-rw-r--r--   1 root supergroup    6253696 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch007.jsonl
+-rw-r--r--   1 root supergroup    6261349 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch008.jsonl
+-rw-r--r--   1 root supergroup    6259045 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch009.jsonl
+-rw-r--r--   1 root supergroup    6256733 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch010.jsonl
+-rw-r--r--   1 root supergroup    6258160 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch011.jsonl
+-rw-r--r--   1 root supergroup    6264519 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch012.jsonl
+-rw-r--r--   1 root supergroup    6251785 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch013.jsonl
+-rw-r--r--   1 root supergroup    6259961 2026-09-28 15:27 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch014.jsonl
+-rw-r--r--   1 root supergroup    6255716 2026-09-28 15:28 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch015.jsonl
+-rw-r--r--   1 root supergroup    6257810 2026-09-28 15:28 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch016.jsonl
+-rw-r--r--   1 root supergroup    6247991 2026-09-28 15:28 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch017.jsonl
+-rw-r--r--   1 root supergroup    6263266 2026-09-28 15:28 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch018.jsonl
+-rw-r--r--   1 root supergroup    6257166 2026-09-28 15:28 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch019.jsonl
+-rw-r--r--   1 root supergroup    6258804 2026-09-28 15:28 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch020.jsonl
+-rw-r--r--   1 root supergroup    6254274 2026-09-28 15:29 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch021.jsonl
+-rw-r--r--   1 root supergroup    6258838 2026-09-28 15:29 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch022.jsonl
+-rw-r--r--   1 root supergroup    6257212 2026-09-28 15:29 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch023.jsonl
+-rw-r--r--   1 root supergroup    6255497 2026-09-28 15:29 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch024.jsonl
+-rw-r--r--   1 root supergroup    6250846 2026-09-28 15:30 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch025.jsonl
+-rw-r--r--   1 root supergroup    6258098 2026-09-28 15:30 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch026.jsonl
+-rw-r--r--   1 root supergroup    6252307 2026-09-28 15:30 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch027.jsonl
+-rw-r--r--   1 root supergroup    6263700 2026-09-28 15:30 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch028.jsonl
+-rw-r--r--   1 root supergroup    6256482 2026-09-28 15:30 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch029.jsonl
+-rw-r--r--   1 root supergroup    6261709 2026-09-28 15:30 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch030.jsonl
+-rw-r--r--   1 root supergroup    6253814 2026-09-28 15:30 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch031.jsonl
+-rw-r--r--   1 root supergroup    6255069 2026-09-28 15:30 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch032.jsonl
+-rw-r--r--   1 root supergroup    6254249 2026-09-28 15:30 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch033.jsonl
+-rw-r--r--   1 root supergroup    6252132 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch034.jsonl
+-rw-r--r--   1 root supergroup    6258556 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch035.jsonl
+-rw-r--r--   1 root supergroup    6254907 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch036.jsonl
+-rw-r--r--   1 root supergroup    6256088 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch037.jsonl
+-rw-r--r--   1 root supergroup    6267914 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch038.jsonl
+-rw-r--r--   1 root supergroup    6256748 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch039.jsonl
+-rw-r--r--   1 root supergroup    6259150 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch040.jsonl
+-rw-r--r--   1 root supergroup    6250019 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch041.jsonl
+-rw-r--r--   1 root supergroup    6252833 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch042.jsonl
+-rw-r--r--   1 root supergroup    6256369 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch043.jsonl
+-rw-r--r--   1 root supergroup    6254917 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch044.jsonl
+-rw-r--r--   1 root supergroup    6255118 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch045.jsonl
+-rw-r--r--   1 root supergroup    6256570 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch046.jsonl
+-rw-r--r--   1 root supergroup    6253730 2026-09-28 15:31 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch047.jsonl
+-rw-r--r--   1 root supergroup    6251168 2026-09-28 15:32 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch048.jsonl
+-rw-r--r--   1 root supergroup    6263575 2026-09-28 15:32 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch049.jsonl
+-rw-r--r--   1 root supergroup    6266595 2026-09-28 15:32 /data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch050.jsonl
+drwxr-xr-x   - root supergroup          0 2026-09-28 15:27 /data/raw/mercari
+-rw-r--r--   1 root supergroup  337809843 2026-09-28 15:27 /data/raw/mercari/train.tsv
+
+======================================================================
+$ hdfs dfs -du -h /data/raw
+======================================================================
+298.4 M  298.4 M  /data/raw/generated
+322.2 M  322.2 M  /data/raw/mercari
+
+======================================================================
+$ hdfs fsck /data/raw -files -blocks
+======================================================================
+Connecting to namenode via http://namenode:9870/fsck?ugi=root&files=1&blocks=1&path=%2Fdata%2Fraw
+FSCK started by root (auth:SIMPLE) from /172.18.0.2 for path /data/raw at Mon Sep 28 15:33:11 UTC 2026
+
+/data/raw <dir>
+/data/raw/generated <dir>
+/data/raw/generated/run=2026_09_28T150245Z <dir>
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch001.jsonl 6251341 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741831_1007 len=6251341 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch002.jsonl 6258551 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741832_1008 len=6258551 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch003.jsonl 6259246 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741833_1009 len=6259246 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch004.jsonl 6262849 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741834_1010 len=6262849 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch005.jsonl 6252233 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741835_1011 len=6252233 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch006.jsonl 6255712 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741836_1012 len=6255712 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch007.jsonl 6253696 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741837_1013 len=6253696 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch008.jsonl 6261349 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741838_1014 len=6261349 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch009.jsonl 6259045 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741839_1015 len=6259045 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch010.jsonl 6256733 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741840_1016 len=6256733 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch011.jsonl 6258160 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741841_1017 len=6258160 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch012.jsonl 6264519 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741842_1018 len=6264519 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch013.jsonl 6251785 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741843_1019 len=6251785 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch014.jsonl 6259961 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741844_1020 len=6259961 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch015.jsonl 6255716 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741845_1021 len=6255716 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch016.jsonl 6257810 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741846_1022 len=6257810 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch017.jsonl 6247991 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741847_1023 len=6247991 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch018.jsonl 6263266 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741848_1024 len=6263266 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch019.jsonl 6257166 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741849_1025 len=6257166 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch020.jsonl 6258804 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741850_1026 len=6258804 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch021.jsonl 6254274 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741851_1027 len=6254274 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch022.jsonl 6258838 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741852_1028 len=6258838 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch023.jsonl 6257212 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741853_1029 len=6257212 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch024.jsonl 6255497 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741854_1030 len=6255497 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch025.jsonl 6250846 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741855_1031 len=6250846 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch026.jsonl 6258098 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741856_1032 len=6258098 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch027.jsonl 6252307 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741857_1033 len=6252307 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch028.jsonl 6263700 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741858_1034 len=6263700 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch029.jsonl 6256482 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741859_1035 len=6256482 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch030.jsonl 6261709 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741860_1036 len=6261709 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch031.jsonl 6253814 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741861_1037 len=6253814 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch032.jsonl 6255069 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741862_1038 len=6255069 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch033.jsonl 6254249 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741863_1039 len=6254249 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch034.jsonl 6252132 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741864_1040 len=6252132 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch035.jsonl 6258556 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741865_1041 len=6258556 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch036.jsonl 6254907 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741866_1042 len=6254907 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch037.jsonl 6256088 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741867_1043 len=6256088 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch038.jsonl 6267914 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741868_1044 len=6267914 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch039.jsonl 6256748 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741869_1045 len=6256748 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch040.jsonl 6259150 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741870_1046 len=6259150 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch041.jsonl 6250019 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741871_1047 len=6250019 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch042.jsonl 6252833 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741872_1048 len=6252833 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch043.jsonl 6256369 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741873_1049 len=6256369 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch044.jsonl 6254917 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741874_1050 len=6254917 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch045.jsonl 6255118 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741875_1051 len=6255118 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch046.jsonl 6256570 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741876_1052 len=6256570 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch047.jsonl 6253730 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741877_1053 len=6253730 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch048.jsonl 6251168 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741878_1054 len=6251168 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch049.jsonl 6263575 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741879_1055 len=6263575 Live_repl=1
+
+/data/raw/generated/run=2026_09_28T150245Z/gen_2026_09_28_batch050.jsonl 6266595 bytes, replicated: replication=1, 1 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741880_1056 len=6266595 Live_repl=1
+
+/data/raw/mercari <dir>
+/data/raw/mercari/train.tsv 337809843 bytes, replicated: replication=1, 6 block(s):  OK
+0. BP-1691109009-172.18.0.2-1790608615446:blk_1073741825_1001 len=67108864 Live_repl=1
+1. BP-1691109009-172.18.0.2-1790608615446:blk_1073741826_1002 len=67108864 Live_repl=1
+2. BP-1691109009-172.18.0.2-1790608615446:blk_1073741827_1003 len=67108864 Live_repl=1
+3. BP-1691109009-172.18.0.2-1790608615446:blk_1073741828_1004 len=67108864 Live_repl=1
+4. BP-1691109009-172.18.0.2-1790608615446:blk_1073741829_1005 len=67108864 Live_repl=1
+5. BP-1691109009-172.18.0.2-1790608615446:blk_1073741830_1006 len=2265523 Live_repl=1
+
+
+Status: HEALTHY
+ Number of data-nodes:	1
+ Number of racks:		1
+ Total dirs:			4
+ Total symlinks:		0
+
+Replicated Blocks:
+ Total size:	650654260 B
+ Total files:	51
+ Total blocks (validated):	56 (avg. block size 11618826 B)
+ Minimally replicated blocks:	56 (100.0 %)
+ Over-replicated blocks:	0 (0.0 %)
+ Under-replicated blocks:	0 (0.0 %)
+ Mis-replicated blocks:		0 (0.0 %)
+ Default replication factor:	1
+ Average block replication:	1.0
+ Missing blocks:		0
+ Corrupt blocks:		0
+ Missing replicas:		0 (0.0 %)
+ Blocks queued for replication:	0
+
+Erasure Coded Block Groups:
+ Total size:	0 B
+ Total files:	0
+ Total block groups (validated):	0
+ Minimally erasure-coded block groups:	0
+ Over-erasure-coded block groups:	0
+ Under-erasure-coded block groups:	0
+ Unsatisfactory placement block groups:	0
+ Average block group size:	0.0
+ Missing block groups:		0
+ Corrupt block groups:		0
+ Missing internal blocks:	0
+ Blocks queued for replication:	0
+FSCK ended at Mon Sep 28 15:33:11 UTC 2026 in 35 milliseconds
+
+
+The filesystem under path '/data/raw' is HEALTHY

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal as TerminalIcon, Filter } from 'lucide-react';
+import { Terminal as TerminalIcon } from 'lucide-react';
 
 interface LogEntry {
   timestamp: string;
@@ -44,46 +44,51 @@ export const LogTerminalStream: React.FC<LogTerminalStreamProps> = ({ logs }) =>
     }
   };
 
-  return (
-    <div className="bg-surface-lowest border border-outline-variant rounded-none flex flex-col h-full font-mono text-xs shadow-inner">
-      {/* Terminal Top Bar */}
-      <div className="bg-surface-container px-4 py-2 border-b border-outline-variant flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <TerminalIcon className="w-4 h-4 text-primary" />
-          <span className="text-xs font-bold text-primary tracking-wider uppercase">
-            LIVE INGESTION ANSI BUFFER STREAM
-          </span>
-        </div>
+  const filterLabels = [
+    { id: 'ALL', label: 'All' },
+    { id: 'INFO', label: 'Info' },
+    { id: 'ACK', label: 'Ack' },
+    { id: 'WARN', label: 'Warn' },
+    { id: 'SUCCESS', label: 'Success' },
+  ];
 
-        {/* Filter Badges */}
-        <div className="flex items-center gap-1.5">
-          <Filter className="w-3.5 h-3.5 text-outline mr-1" />
-          {['ALL', 'INFO', 'ACK', 'WARN', 'SUCCESS'].map((lvl) => (
+  return (
+    <div className="bg-surface-lowest border border-outline-variant rounded flex flex-col h-full text-xs">
+      <div className="bg-surface-container px-4 py-2.5 border-b border-outline-variant flex justify-between items-center rounded-t">
+        <div className="flex items-center gap-2">
+          <TerminalIcon className="w-3.5 h-3.5 text-outline" />
+          <span className="text-sm font-semibold text-foreground">Log stream</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {filterLabels.map(({ id, label }) => (
             <button
-              key={lvl}
-              onClick={() => setFilter(lvl)}
-              className={`px-2 py-0.5 text-[10px] border transition-colors ${
-                filter === lvl ? 'bg-primary border-primary text-black font-bold' : 'bg-surface-container border-outline-variant text-outline hover:text-white'
+              key={id}
+              onClick={() => setFilter(id)}
+              className={`px-2.5 py-1 text-[11px] rounded-sm border transition-colors duration-150 active:scale-[0.97] ${
+                filter === id
+                  ? 'bg-primary/15 border-primary/50 text-primary font-medium'
+                  : 'bg-transparent border-transparent text-outline hover:text-foreground'
               }`}
             >
-              {lvl}
+              {label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Terminal Content Buffer */}
-      <div className="p-4 overflow-y-auto max-h-[220px] min-h-[160px] custom-scrollbar space-y-1 bg-black/60">
+      <div className="p-3 overflow-y-auto max-h-[220px] min-h-[160px] custom-scrollbar space-y-1 font-mono">
         {filteredLogs.length === 0 ? (
-          <div className="text-outline italic text-center py-4">No log trace buffer matched filter '{filter}'.</div>
+          <div className="text-outline italic text-center py-4">
+            No log entries match &ldquo;{filter}&rdquo;
+          </div>
         ) : (
           filteredLogs.map((log, idx) => (
-            <div key={idx} className="flex items-start gap-2.5 leading-relaxed font-mono">
-              <span className="text-outline text-[11px] select-none">[{log.timestamp}]</span>
-              <span className={`px-1.5 py-0.2 border text-[10px] uppercase ${getLevelBadgeClass(log.level)}`}>
-                {log.level}
+            <div key={idx} className="flex items-start gap-2 leading-relaxed">
+              <span className="text-outline text-[10px] select-none shrink-0">{log.timestamp}</span>
+              <span className={`px-1.5 py-0.5 border text-[10px] rounded-sm shrink-0 ${getLevelBadgeClass(log.level)}`}>
+                {log.level.toLowerCase()}
               </span>
-              <span className="text-white/90 break-all">{log.message}</span>
+              <span className="text-foreground/90 break-all">{log.message}</span>
             </div>
           ))
         )}

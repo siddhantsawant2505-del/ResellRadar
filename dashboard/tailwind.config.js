@@ -8,41 +8,42 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: '#0f131c',
+        background: '#13110f',
         surface: {
-          DEFAULT: '#0f131c',
-          lowest: '#0a0e16',
-          low: '#181c24',
-          container: '#1c2028',
-          high: '#262a33',
-          highest: '#31353e',
+          DEFAULT: '#13110f',
+          lowest: '#0e0d0b',
+          low: '#1c1a17',
+          container: '#252320',
+          high: '#2e2c28',
+          highest: '#3a3834',
         },
         primary: {
-          DEFAULT: '#4cd7f6',
-          container: '#06b6d4',
-          dim: '#acedff',
+          DEFAULT: '#e8a733',
+          container: '#c48820',
+          dim: '#f5c86a',
         },
         secondary: {
-          DEFAULT: '#4edea3',
-          container: '#00a572',
+          DEFAULT: '#5cb87a',
+          container: '#3a9957',
         },
         tertiary: {
-          DEFAULT: '#c0c1ff',
-          container: '#6366f1',
+          DEFAULT: '#9b8ff0',
+          container: '#6b5fd4',
         },
         accent: {
-          amber: '#f59e0b',
-          crimson: '#ef4444',
+          amber: '#c8892a',
+          crimson: '#d9534f',
         },
+        foreground: '#d4cfc9',
         outline: {
-          DEFAULT: '#869397',
-          variant: '#3d494c',
-        }
+          DEFAULT: '#a09890',
+          variant: '#5c5450',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
-      }
+      },
     },
   },
   plugins: [],

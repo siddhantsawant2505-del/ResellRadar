@@ -13,43 +13,80 @@ interface LiveMetricsPanelProps {
   };
 }
 
+// Returns status color tokens based on thresholds.
+// Skill rule: green = on track, amber = caution, red = alert.
+function getStatusColor(metric: string, value: number): {
+  value: string;
+  accent: string;
+  bar: string;
+  label: string;
+} {
+  switch (metric) {
+    case 'velocity':
+      if (value > 5) return { value: 'text-secondary', accent: 'bg-secondary', bar: 'bg-secondary', label: 'High throughput' };
+      if (value > 0) return { value: 'text-accent-amber', accent: 'bg-accent-amber', bar: 'bg-accent-amber', label: 'Low throughput' };
+      return { value: 'text-outline', accent: 'bg-outline', bar: 'bg-outline', label: 'Idle' };
+    case 'threads':
+      if (value > 0) return { value: 'text-secondary', accent: 'bg-secondary', bar: 'bg-secondary', label: `of 32 max` };
+      return { value: 'text-outline', accent: 'bg-outline', bar: 'bg-outline', label: 'Pool standby' };
+    case 'success':
+      if (value >= 99) return { value: 'text-secondary', accent: 'bg-secondary', bar: 'bg-secondary', label: 'Healthy' };
+      if (value >= 95) return { value: 'text-accent-amber', accent: 'bg-accent-amber', bar: 'bg-accent-amber', label: 'Degraded' };
+      return { value: 'text-accent-crimson', accent: 'bg-accent-crimson', bar: 'bg-accent-crimson', label: 'Alert' };
+    case 'listings':
+    default:
+      return { value: 'text-primary', accent: 'bg-primary', bar: 'bg-primary', label: '' };
+  }
+}
+
 export const LiveMetricsPanel: React.FC<LiveMetricsPanelProps> = ({ metrics }) => {
+  const velocityStatus = getStatusColor('velocity', metrics.scrapes_per_sec);
+  const threadsStatus = getStatusColor('threads', metrics.active_threads);
+  const successStatus = getStatusColor('success', metrics.success_rate || 99.41);
+  const listingsStatus = getStatusColor('listings', metrics.total_raw_listings);
+
+  // Thread utilisation as percentage of 32-thread max
+  const threadPct = Math.min(100, Math.round((metrics.active_threads / 32) * 100));
+
   const cards = [
     {
-      title: 'TOTAL LISTINGS IN RAW LAKE',
+      // Skill: title should state the insight, not just the label
+      title: 'Raw lake size',
       value: (metrics.total_raw_listings || 0).toLocaleString(),
-      sub: `${metrics.scraped_count > 0 ? `+${metrics.scraped_count} in active session` : 'Raw lake ready'}`,
+      target: metrics.scraped_count > 0
+        ? `+${metrics.scraped_count} this session`
+        : 'No active session',
       icon: Database,
-      color: 'text-primary',
-      borderColor: 'border-primary/40',
-      accent: 'bg-primary',
+      status: listingsStatus,
+      showBar: false,
+      barPct: 0,
     },
     {
-      title: 'INGESTION VELOCITY',
-      value: `${metrics.scrapes_per_sec.toFixed(1)} req/s`,
-      sub: metrics.scrapes_per_sec > 0 ? 'High-throughput active' : 'Idle stream standby',
+      title: 'Ingestion rate',
+      value: `${metrics.scrapes_per_sec.toFixed(1)}`,
+      target: 'req / s  ·  target > 5',
       icon: Zap,
-      color: 'text-secondary',
-      borderColor: 'border-secondary/40',
-      accent: 'bg-secondary',
+      status: velocityStatus,
+      showBar: false,
+      barPct: 0,
     },
     {
-      title: 'CONCURRENT THREAD POOL',
-      value: `${metrics.active_threads} Threads`,
-      sub: metrics.active_threads > 0 ? 'Workers active' : 'Thread pool standby',
+      title: 'Thread utilisation',
+      value: `${metrics.active_threads}`,
+      target: `of 32 threads  ·  ${threadPct}% load`,
       icon: Cpu,
-      color: 'text-tertiary',
-      borderColor: 'border-tertiary/40',
-      accent: 'bg-tertiary',
+      status: threadsStatus,
+      showBar: true,
+      barPct: threadPct,
     },
     {
-      title: 'SUCCESS / ACK RATE',
-      value: `${metrics.success_rate || 99.41}%`,
-      sub: 'Retry logic active (0.59% backoff)',
+      title: 'Success rate',
+      value: `${(metrics.success_rate || 99.41).toFixed(2)}%`,
+      target: `target ≥ 99%  ·  ${successStatus.label}`,
       icon: CheckCircle2,
-      color: 'text-primary',
-      borderColor: 'border-primary/40',
-      accent: 'bg-primary',
+      status: successStatus,
+      showBar: false,
+      barPct: 0,
     },
   ];
 
@@ -60,17 +97,34 @@ export const LiveMetricsPanel: React.FC<LiveMetricsPanelProps> = ({ metrics }) =
         return (
           <div
             key={i}
-            className={`bg-surface-container border border-outline-variant p-4 relative overflow-hidden flex flex-col justify-between`}
+            className="bg-surface-container border border-outline-variant p-4 rounded relative overflow-hidden flex flex-col gap-3"
           >
-            <div className={`absolute top-0 left-0 right-0 h-0.5 ${c.accent}`} />
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-[10px] font-mono text-outline uppercase tracking-wider">{c.title}</span>
-                <IconComponent className={`w-4 h-4 ${c.color}`} />
-              </div>
-              <div className="text-2xl font-mono font-bold text-white mb-1">{c.value}</div>
+            {/* Status accent stripe — color encodes health, not just identity */}
+            <div className={`absolute top-0 left-0 right-0 h-0.5 ${c.status.accent}`} />
+
+            {/* Header row */}
+            <div className="flex justify-between items-start">
+              <span className="text-xs text-outline leading-snug">{c.title}</span>
+              <IconComponent className={`w-4 h-4 ${c.status.value} opacity-60 shrink-0`} />
             </div>
-            <div className="text-[11px] font-mono text-outline">{c.sub}</div>
+
+            {/* Primary metric — large, mono, status-colored */}
+            <div className={`text-3xl font-mono font-bold leading-none ${c.status.value}`}>
+              {c.value}
+            </div>
+
+            {/* Thread utilisation bar */}
+            {c.showBar && (
+              <div className="h-1 bg-surface-high rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${c.status.bar}`}
+                  style={{ width: `${c.barPct}%` }}
+                />
+              </div>
+            )}
+
+            {/* Context / target — skill: every KPI needs a comparison value */}
+            <div className="text-[11px] text-outline leading-snug">{c.target}</div>
           </div>
         );
       })}

@@ -1,0 +1,63 @@
+# ResellRadar - single-node pseudo-distributed HDFS (Person 1, real cluster)
+#
+# Official Apache Hadoop 3.4.1 image: apache/hadoop:3
+#   - namenode : HDFS master  (RPC 9000, WebHDFS/Web UI 9870)
+#   - datanode : HDFS worker  (data transfer 9866, Web UI 9864)
+#
+# Team contract honored in docker/hadoop/hdfs-site.xml:
+#   dfs.replication = 1, dfs.blocksize = 67,108,864 (64 MB)
+#
+# Raw-zone data is uploaded via WebHDFS from the host (scripts/push_to_hdfs.py);
+# persistence lives in named volumes hdfs_namenode / hdfs_datanode.
+#
+# Usage (from the project root):
+#   docker compose -f docker-compose.yml up -d
+#   # wait for a healthy DataNode, then:
+#   python scripts/push_to_hdfs.py
+#   docker exec resellradar-namenode hdfs dfsadmin -report   # live proof
+
+services:
+  namenode:
+    image: apache/hadoop:3
+    container_name: resellradar-namenode
+    hostname: namenode
+    user: root
+    # format the NameNode storage once (idempotent), then start
+    command: ["/bin/bash", "-c", "if [ ! -f /hadoop/dfs/name/current/VERSION ]; then hdfs namenode -format -nonInteractive; fi; exec hdfs namenode"]
+    environment:
+      EFS_NAME: HDFS
+    ports:
+      - "9870:9870"   # NameNode Web UI / WebHDFS
+      - "9000:9000"   # HDFS RPC
+    volumes:
+      - hdfs_namenode:/hadoop/dfs/name
+      - ./docker/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./docker/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -fs hdfs://namenode:9000 -safemode get | grep -q OFF"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  datanode:
+    image: apache/hadoop:3
+    container_name: resellradar-datanode
+    hostname: datanode
+    user: root
+    command: ["/bin/bash", "-c", "hdfs datanode"]
+    environment:
+      EFS_NAME: HDFS
+    ports:
+      - "9864:9864"   # DataNode Web UI
+    volumes:
+      - hdfs_datanode:/hadoop/dfs/data
+      - ./docker/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./docker/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    depends_on:
+      namenode:
+        condition: service_healthy
+
+volumes:
+  hdfs_namenode:
+  hdfs_datanode:

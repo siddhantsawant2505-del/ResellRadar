@@ -1,31 +1,44 @@
-Person 1 — Data Engineer (Ingestion + Storage)
+# ResellRadar — Task Plan v3 (2026-09-28)
 
-Owns: Scraper, HDFS setup, raw data pipeline
+## Person 1 — Data Engineer (Acquisition/Generation + Storage)
+Owns: data download, synthetic generator, HDFS push, raw-zone validation, schema contracts.
+Deliverable: ~2M raw listings (Mercari real + generated) landed in an immutable raw zone and
+HDFS, with documentation, checksums, and full-data validation.
 
-Build the Scrapy spider (or synthetic data generator) for phones + furniture listings
-Set up local pseudo-distributed Hadoop cluster, push raw data to HDFS
-Handle data quality at the source: rate limiting, retry logic, schema consistency in raw JSON
-Own /data/raw/ and the scraper/ module
-Deliverable: 50k+ clean raw listings landing reliably in HDFS
+## Sources
+1. REAL — Mercari Price Suggestion Challenge `train.tsv` (~1.48M rows, USD, no dates/location).
+2. GENERATED — ~500k phone/furniture listings supplying the fields Mercari lacks
+   (posted_date, delisted_date, location_city, location_region).
 
-Person 2 — Big Data Processing Engineer (Core BDA component)
+## Decisions (locked)
+- **USD everywhere.** Messy price strings live only in `price_raw`; numeric `price` stays float.
+- US city aliases (NYC/New York, SF/San Francisco, LA/Los Angeles, Philly/Philadelphia) instead
+  of Indian aliases, since the price scale comes from a USD market. Same normalization teaching value.
+- Raw zone partitioned per run: `data/raw/generated/run=<UTC timestamp>/gen_YYYY_MM_DD_batchNNN.jsonl`.
+- Schema docs drafted BEFORE the generator; the generator implements the contract.
+- Structural validation (gate) is separate from statistical profiling (report).
 
-Owns: Spark cleaning, entity resolution, feature engineering
+## Tasks
+0. Housekeeping — .gitignore (data zones), requirements (kaggle, py7zr, psutil), legacy parking. ✅
+1. `scripts/download_data.py` — use existing archives in `data/` first, then Kaggle CLI
+   (rules-acceptance + credentials handling), extract to `data/raw/mercari/`, SHA-256 →
+   `logs/checksums.txt`, row-count assert (~1.48M).
+2. `scripts/extract_seed_sample.py` — chunked phone/furniture sample of Mercari into
+   `data/seed/mercari_phone_furniture_sample.csv` (generator calibration input).
+3. `docs/SCHEMA_mercari.md`, `docs/SCHEMA_generated.md`, `docs/SCHEMA_MISMATCHES.md` → then
+   `generator/generate_data.py` (vectorized, seeded, 10k-chunk JSONL, all messiness targets).
+4. `scripts/push_to_hdfs.py` — WebHDFS/CLI/emulated modes, replication=1, 64MB blocks,
+   `logs/ingestion.log`, total blocks + size summary.
+5. `scripts/validate_raw.py` — dual-profile (TSV + JSONL) chunked validator →
+   `logs/validation_report.md`.
+6. Smoke test at 10k rows, then full scale; record runtime + memory.
+7. (LAST, out of scope for now) Stitch-generated ingestion control panel wired to real scripts.
 
-Build clean_normalize.py — schema normalization, text preprocessing
-Build entity_resolution_minhash.py — MinHash LSH clustering (the technical centerpiece — this person should be comfortable tuning Jaccard thresholds/hash tables)
-Build feature_engineering.py — depreciation curves, resale velocity, regional price variance via Spark SQL
-Own /data/processed/, /data/curated/, and most of spark_jobs/
-Deliverable: canonicalized, deduplicated dataset + aggregated analytics tables
+## Legacy (pre-v3) components
+- `scraper/` (Scrapy spider + old generator), `hdfs_uploader.py`, `server.py`, `dashboard/`,
+  old `README.md` — superseded; kept until the UI task replaces them. See README_PERSON1_NEXT_STEPS.md.
 
-Person 3 — Graph & Visualization Engineer (Presentation layer)
-
-Owns: Graph construction, dashboard, demo
-
-Build build_graph.py — NetworkX graph, PageRank/connected-components for arbitrage clustering
-Build the Streamlit dashboard (app.py) — depreciation charts, regional heatmap, velocity distributions
-Own the final demo flow and visual polish (this person should also lead the report's diagrams/screenshots)
-Deliverable: interactive dashboard + graph visualizations ready for evaluation
-Shared responsibilities (all 3)
-Report writing — each person writes the section for their own component (methodology-per-module)
-Integration testing — once Person 2's curated tables are ready, Person 3 wires them into the dashboard; Person 1's raw data feeding Person 2's pipeline needs a joint checkpoint
+## Cross-team note (send to Person 2 NOW)
+The raw contract changes: per-source JSONL (Mercari TSV or converted JSONL + generated JSONL),
+new `price_raw` field, nullable dates/location in Mercari rows. `spark_jobs/clean_normalize.py`
+has a 14-field non-nullable StructType and a hardcoded JSONL path that must be migrated.
