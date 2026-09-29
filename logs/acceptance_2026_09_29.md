@@ -243,6 +243,18 @@ merged through tokens nobody wrote down. Task A recall is still capped at 0.9611
 
 Stage 3 was re-run on the v3 entities (section 4).
 
+### Adoption - the canonical file IS the learned-vocabulary job
+
+Same day, `spark_jobs/entity_resolution_v3.py` was adopted into the canonical
+**`spark_jobs/entity_resolution.py`** (the variant files `entity_resolution_v2.py` /
+`entity_resolution_v3.py` were removed; the as-uploaded original survives in git history
+and as `scripts/entity_resolution_lsh_bounded.py`). The adopted job was re-run end-to-end
+and re-verified: body byte-identical to v3 except app name and job-header text, same counts
+(1,972,679 rows, 1,040,681 entities, 49,788 reposts), `stage2` structural checks 9/9,
+grade Task A 0.9802 / B 0.9826 / C 0.9621 (log: `logs/acceptance_stage2_v3.txt`, report:
+`logs/er_report_stage2_v3.md`). The header documents both original defects (F1/F2), the
+method, and the assessed - not fixed - single-partition window (F3).
+
 ## 4. Stage 3 `feature_engineering.py` - ACCEPTED (re-run on the v2 and v3 entities)
 
 Exit 0, three tables written to `data/curated/`:
@@ -300,11 +312,12 @@ Caveats for the dashboard (expected from the source contract, but they shape eve
 docker compose up -d                                              # cluster (healthcheck fixed)
 python scripts/learn_chatter_vocab.py                             # v3: learn chatter vocabulary
 scripts/run_stage_in_docker.sh spark_jobs/clean_normalize.py
-scripts/run_stage_in_docker.sh spark_jobs/entity_resolution_v2.py # fixed list (superseded)
-scripts/run_stage_in_docker.sh spark_jobs/entity_resolution_v3.py # learned vocab (current)
+scripts/run_stage_in_docker.sh spark_jobs/entity_resolution.py   # canonical (learned vocab)
 scripts/run_stage_in_docker.sh spark_jobs/feature_engineering.py
 python scripts/accept_pipeline.py all --out logs/acceptance_checks.md
 python scripts/evaluate_er.py --pred data/processed/entity_resolved.parquet
+python scripts/push_zones_to_hdfs.py                             # land processed/curated on HDFS
+bash scripts/run_stage_in_docker.sh scripts/verify_hdfs_zones.py # read-back proof
 ```
 
 Evidence files (`.txt` because `.gitignore` excludes `*.log`): `logs/acceptance_stage1.txt`,

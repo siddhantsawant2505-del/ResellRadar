@@ -153,6 +153,15 @@ drops have no prediction, capping recall at 98.03%.
 Your call now: adopt **v3** (or v2) into `entity_resolution.py` (your file was left untouched
 so the fix can be diffed), or tell Person 1 which parts you want changed.
 
+**ADOPTED (2026-09-29, later the same day):** the learned-vocabulary job is now the canonical
+**`spark_jobs/entity_resolution.py`** (v2/v3 variant files removed; your original survives in
+git history and as `scripts/entity_resolution_lsh_bounded.py`). The adopted file was re-run
+end-to-end and re-verified: identical counts, stage2 checks 9/9, Task A 0.9802 / B 0.9826 /
+C 0.9621. Nothing is asked of Person 2's Stage 2 anymore - the diff conversation is closed.
+The processed/curated zones are now also on HDFS (see `docs/HDFS_SETUP.md`):
+`hdfs://namenode:9000/data/processed/...` and `/data/curated/...`, read-back-verified
+(`logs/hdfs_zone_readback.txt`).
+
 **Caveat on that 0.9802 (superseded the same day by v3).** The chatter list came from the
 documented messiness spec, not from the answer key, but it was a *fixed* vocabulary - on the
 real Mercari half a learned/extended one is needed. **Done in `spark_jobs/entity_resolution_v3.py`**:
@@ -170,8 +179,10 @@ Task A 1.0000 / 0.9611 / **0.9802** identical to v2; entities 1,065,540 -> **1,0
 (-24,859 mercari merges nobody wrote down); structural checks 9/9. Stage 3 re-run on the v3
 entities: depreciation 1,062,905 / velocity 1,105 / regional 1,056,069 rows.
 
-**F3 (open, non-blocking).** `row_number().over(Window.orderBy("model_key"))` has no
-`partitionBy`, so all ~1.1M keys pass through a single partition.
+**F3 (assessed, documented in the job header, intentionally not "fixed").**
+`row_number().over(Window.orderBy("model_key"))` has no `partitionBy`, so all ~1.1M keys pass
+through a single partition. It is deterministic and costs seconds at this scale; a distributed
+ID scheme would trade determinism for a non-bottleneck. Revisit only at ~100x corpus scale.
 
 ## 5. Evidence pack (for the report / viva)
 

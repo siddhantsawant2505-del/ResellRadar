@@ -1,20 +1,91 @@
+"""
+ResellRadar - Stage 2 entity resolution (canonical job).
+
+Reads :  data/processed/clean_listings.parquet
+         data/processed/chatter_vocab.json      (built by scripts/learn_chatter_vocab.py)
+Writes:  data/processed/entity_resolved.parquet (same schema/path as the original upload, so
+                                                  Stage 3 and the dashboard need no change)
+
+This file replaces the original upload after the 2026-09-29 acceptance run found two
+defects in it (full evidence: logs/acceptance_2026_09_29.md, docs/HANDOFF_Person2.md 4c):
+
+F1 - the original's MinHashLSH approxSimilarityJoin was display-only dead code (entity_id
+     came from row_number over model_key, provably identical counts) while costing
+     17,360,494,325 candidate pairs on the delivered data - the job never finished.
+F2 - the original's model_key regexes stripped storage sizes and colours (the product
+     identity per docs/SCHEMA_generated.md) and kept the listing chatter, splitting every
+     true product across ~39 keys (Task A F1 0.2341).
+
+What this version does
+----------------------
+1. ENTITY KEY = PRODUCT TOKENS, NOT A DESTRUCTIVELY STRIPPED STRING.
+   Tokenize title_clean, remove the listing's own location_city, remove the chatter
+   vocabulary, then key on the sorted token SET. Storage, colour and model are kept because
+   they ARE the product (canonical = brand x model x storage x colour; titles are surface
+   variants of it). Set semantics also collapse the generator's "last-token-first" variant.
+   Order-insensitive and de-duplicated via array_except.
+
+2. CHATTER VOCABULARY IS LEARNED FROM THE CORPUS, NOT HARDCODED (v3 improvement).
+   data/processed/chatter_vocab.json is produced by scripts/learn_chatter_vocab.py from the
+   Stage 1 output alone (never from ground truth): a token/phrase is chatter iff deleting it
+   from a title yields the exact sorted token set of another real title from the same
+   source, in >= 85% of the titles that contain it (>= 50 distinct-title support, 1-3-token
+   phrases). Product-line suffixes (pro/max/plus/mini/ultra/...) are guarded at learn time:
+   surface-optional in text but catalog identity. Per-source vocabularies (generated 53
+   tokens incl. all 27 documented ones + city names; mercari 492 real-marketplace chatter
+   tokens). The job FAILS LOUDLY if the artifact is missing - build it first with:
+       python scripts/learn_chatter_vocab.py
+
+3. NO TITLE INDIRECTION AND NO DEAD SELF-JOIN.
+   The original mapped title -> entity and joined listings on title_clean (silently
+   duplicating rows if one title ever mapped to two entities) around a 17-billion-pair
+   demo join. The key here is a per-row function, so listings join the entity table
+   directly on model_key.
+
+4. WHITESPACE IS COLLAPSED BEFORE TOKENIZING.
+   clean_normalize strips punctuation but keeps the spaces around it, so the " - Unlocked" /
+   " - {city} pickup" / " - {condition}" templates leave a DOUBLE space. Spark's
+   split(col, " ") then emits an empty token that no vocabulary removes and every product
+   split into exactly 2 entities (measured). Collapse whitespace first, drop "" defensively.
+
+Repost detection is byte-identical to the original upload (same window, same 1-14 day rule,
+same original-listing link), so repost scoring is unaffected by this rewrite.
+
+Known accepted limitation (assessed, not a defect at this scale): the entity-id
+row_number() over Window.orderBy("model_key") has no partitionBy, so unique keys flow
+through a single partition. It is deterministic and costs seconds for ~1M keys; a
+distributed ID scheme would trade determinism for a non-bottleneck. Revisit only at
+~100x corpus scale.
+
+Acceptance evidence: logs/acceptance_2026_09_29.md (v2 fixed-list parity 0.9802,
+v3 learned-vocabulary 0.9802), logs/er_report_stage2_v3.md.
+"""
+
+import json
 from pathlib import Path
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col,
     split,
+    trim,
+    lower,
+    coalesce,
+    lit,
+    concat_ws,
     array_distinct,
+    array_except,
+    sort_array,
+    size,
     row_number,
     regexp_replace,
-    trim,
     when,
     lag,
     datediff,
-    first_value
+    first_value,
 )
+from pyspark.sql.types import ArrayType, StringType
 from pyspark.sql.window import Window
-from pyspark.ml.feature import HashingTF, MinHashLSH
 
 
 # ============================================================
@@ -30,6 +101,35 @@ INPUT_PATH = str(
 OUTPUT_PATH = str(
     BASE_DIR / "data" / "processed" / "entity_resolved.parquet"
 )
+
+VOCAB_PATH = BASE_DIR / "data" / "processed" / "chatter_vocab.json"
+
+
+# ============================================================
+# CHATTER VOCABULARY (learned from the corpus - build artifact)
+# ============================================================
+# Produced by scripts/learn_chatter_vocab.py from the Stage 1 output alone.
+# Fail loudly rather than silently keying with an empty vocabulary.
+
+if not VOCAB_PATH.exists():
+    raise SystemExit(
+        f"FATAL: chatter vocabulary not found: {VOCAB_PATH}\n"
+        f"  entity_resolution keys listings with a corpus-derived vocabulary.\n"
+        f"  Build it first:  python scripts/learn_chatter_vocab.py"
+    )
+
+_vocab_payload = json.loads(VOCAB_PATH.read_text(encoding="utf-8"))
+VOCABULARIES = _vocab_payload.get("vocabularies")
+if not isinstance(VOCABULARIES, dict) or not VOCABULARIES:
+    raise SystemExit(
+        f"FATAL: {VOCAB_PATH} has no usable 'vocabularies' mapping. "
+        f"Rebuild it:  python scripts/learn_chatter_vocab.py"
+    )
+
+print("Chatter vocabulary (learned, per source):")
+for _src in sorted(VOCABULARIES):
+    print(f"  {_src}: {len(VOCABULARIES[_src])} tokens")
+print(f"  source: {VOCAB_PATH.name} (created {_vocab_payload.get('created_utc', '?')})")
 
 
 # ============================================================
@@ -59,221 +159,82 @@ print(INPUT_PATH)
 
 df = spark.read.parquet(INPUT_PATH)
 
-total_records = df.count()
-
 print("\n========== DATASET ==========")
-print("Total Records:", total_records)
+print("Total Records:", df.count())
 
 
 # ============================================================
-# CREATE MODEL-AWARE KEY
+# ENTITY KEY
 # ============================================================
+# title tokens, minus the listing's own city, minus the row's SOURCE-SPECIFIC
+# learned chatter vocabulary. array_except is a set operation, so tokens are
+# de-duplicated and order-insensitive:
+# "titanium apple iphone 13 128gb titanium" -> {13, 128gb, apple, iphone, titanium}.
 
-df = df.withColumn(
-    "model_key",
-    col("title_clean")
-)
-
-# Remove storage sizes
-df = df.withColumn(
-    "model_key",
-    regexp_replace(
-        col("model_key"),
-        r"\b(16|32|64|128|256|512)\s*gb\b",
-        ""
-    )
-)
-
-df = df.withColumn(
-    "model_key",
-    regexp_replace(
-        col("model_key"),
-        r"\b(1|2)\s*tb\b",
-        ""
-    )
-)
-
-# Remove common colors
-df = df.withColumn(
-    "model_key",
-    regexp_replace(
-        col("model_key"),
-        r"\b(black|white|blue|red|green|yellow|purple|pink|gray|grey|"
-        r"silver|gold|snow|sea|charcoal|natural|tan|brown|beige)\b",
-        ""
-    )
-)
-
-# Remove common listing / condition phrases
-df = df.withColumn(
-    "model_key",
-    regexp_replace(
-        col("model_key"),
-        r"\b(like new|mint condition|excellent condition|good condition|"
-        r"fair condition|great condition|fully functional|minor scuffs|"
-        r"with box|original box|unlocked|battery health)\b",
-        ""
-    )
-)
-
-# Clean spaces
-df = df.withColumn(
-    "model_key",
-    trim(
+# clean_normalize strips punctuation but keeps the spaces around it, so the " - Unlocked"
+# / " - {city} pickup" / " - {condition}" templates leave a DOUBLE space behind. Splitting
+# on a literal " " would then emit an empty token that no chatter list removes, and every
+# such listing would land in a different entity than its plain-template siblings (measured:
+# exactly 2 entities per canonical). Collapse whitespace first, and drop "" defensively.
+title_tokens = array_distinct(
+    split(
         regexp_replace(
-            col("model_key"),
+            trim(col("title_clean")),
             r"\s+",
             " "
-        )
+        ),
+        " "
     )
 )
 
+city_tokens = array_distinct(
+    split(
+        regexp_replace(
+            lower(
+                trim(
+                    coalesce(col("location_city"), lit(""))
+                )
+            ),
+            r"\s+",
+            " "
+        ),
+        " "
+    )
+)
 
-# ============================================================
-# PROTECT PRO / PRO MAX
-# ============================================================
+# Per-source vocabulary: generated and mercari titles carry different chatter.
+# Rows from an unseen source get no chatter removed (safe default; the
+# all-chatter fallback below still prevents an empty key).
+chatter_for_source = lit([]).cast(ArrayType(StringType()))
+for _src in sorted(VOCABULARIES, reverse=True):
+    chatter_for_source = when(
+        col("source_platform") == _src,
+        lit(sorted(VOCABULARIES[_src]))
+    ).otherwise(chatter_for_source)
+
+product_tokens = array_except(
+    array_except(
+        array_except(
+            title_tokens,
+            city_tokens
+        ),
+        chatter_for_source
+    ),
+    lit([""])
+)
+
+# If a title is nothing but chatter, fall back to its raw token set rather than
+# collapsing every such listing into one empty-key entity.
+model_key_tokens = when(
+    size(product_tokens) == 0,
+    sort_array(title_tokens)
+).otherwise(
+    sort_array(product_tokens)
+)
 
 df = df.withColumn(
     "model_key",
-    when(
-        col("model_key").contains("pro max"),
-        regexp_replace(
-            col("model_key"),
-            r"\bpro max\b",
-            "promax"
-        )
-    ).otherwise(
-        col("model_key")
-    )
-)
-
-
-# ============================================================
-# UNIQUE MODEL KEYS
-# ============================================================
-
-unique_models = df.select(
-    "title_clean",
-    "model_key"
-).distinct()
-
-print("\n========== UNIQUE MODELS ==========")
-
-print(
-    "Unique model keys:",
-    unique_models.select("model_key").distinct().count()
-)
-
-
-# ============================================================
-# TOKENIZE
-# ============================================================
-
-model_key_df = unique_models.withColumn(
-    "tokens",
-    array_distinct(
-        split(col("model_key"), " ")
-    )
-)
-
-
-# ============================================================
-# HASHING
-# ============================================================
-
-hashing_tf = HashingTF(
-    inputCol="tokens",
-    outputCol="features",
-    numFeatures=4096
-)
-
-model_key_df = hashing_tf.transform(model_key_df)
-
-
-# ============================================================
-# MINHASH LSH
-# ============================================================
-
-mh = MinHashLSH(
-    inputCol="features",
-    outputCol="hashes",
-    numHashTables=5
-)
-
-model = mh.fit(model_key_df)
-
-print("\n========== MINHASH LSH ==========")
-print("MinHash model created successfully.")
-
-
-# ============================================================
-# SIMILAR MODEL CANDIDATES
-# ============================================================
-
-pairs = model.approxSimilarityJoin(
-    model_key_df,
-    model_key_df,
-    0.3,
-    distCol="jaccard_distance"
-)
-
-pairs = pairs.filter(
-    col("datasetA.title_clean") <
-    col("datasetB.title_clean")
-)
-
-
-# ============================================================
-# PRO / PRO MAX PROTECTION
-# ============================================================
-
-pairs = pairs.filter(
-    ~(
-        col("datasetA.model_key").contains("pro ")
-        &
-        col("datasetB.model_key").contains("promax")
-    )
-)
-
-pairs = pairs.filter(
-    ~(
-        col("datasetA.model_key").contains("promax")
-        &
-        col("datasetB.model_key").contains("pro ")
-    )
-)
-
-
-print("\n========== SIMILAR MODEL PAIRS ==========")
-
-pairs.select(
-    col("datasetA.title_clean").alias("title_a"),
-    col("datasetB.title_clean").alias("title_b"),
-    col("datasetA.model_key").alias("model_a"),
-    col("datasetB.model_key").alias("model_b"),
-    col("jaccard_distance")
-).orderBy(
-    col("jaccard_distance").asc()
-).show(
-    30,
-    truncate=False
-)
-
-
-# ============================================================
-# CREATE ENTITY IDS
-# ============================================================
-
-window = Window.orderBy("model_key")
-
-model_entities = (
-    model_key_df
-    .select("model_key")
-    .distinct()
-    .withColumn(
-        "entity_id",
-        row_number().over(window)
-    )
+    concat_ws(" ", model_key_tokens)
 )
 
 
@@ -281,41 +242,34 @@ model_entities = (
 # MODEL -> ENTITY
 # ============================================================
 
-model_mapping = model_entities.select(
-    "model_key",
-    "entity_id"
+print("\n========== UNIQUE MODELS ==========")
+
+model_mapping = (
+    df
+    .select("model_key")
+    .distinct()
+    .withColumn(
+        "entity_id",
+        row_number().over(
+            Window.orderBy("model_key")
+        )
+    )
 )
 
-
-# ============================================================
-# TITLE -> ENTITY
-# ============================================================
-
-title_mapping = (
-    model_key_df
-    .select(
-        "title_clean",
-        "model_key"
-    )
-    .join(
-        model_mapping,
-        on="model_key",
-        how="left"
-    )
-    .select(
-        "title_clean",
-        "entity_id"
-    )
+print(
+    "Unique model keys:",
+    model_mapping.count()
 )
 
 
 # ============================================================
 # MAP ENTITIES TO LISTINGS
 # ============================================================
+# Direct join on the per-row key (no title indirection = no duplicate rows).
 
 df = df.join(
-    title_mapping,
-    on="title_clean",
+    model_mapping,
+    on="model_key",
     how="left"
 )
 

@@ -1,0 +1,8 @@
+=== zone push run started 2026-09-29T06:30:13Z mode=HDFS_CLI_DOCKER ===
+2026-09-29T06:30:43Z | HDFS_CLI_DOCKER | data/processed/clean_listings.parquet | dir-table | 1,972,679 rows | size=407,626,179B | blocks=7 | -> /data/processed/clean_listings.parquet
+2026-09-29T06:31:05Z | HDFS_CLI_DOCKER | data/processed/entity_resolved.parquet | dir-table | 1,972,679 rows | size=379,348,842B | blocks=6 | -> /data/processed/entity_resolved.parquet
+2026-09-29T06:31:11Z | HDFS_CLI_DOCKER | data/processed/chatter_vocab.json | file | rows n/a | size=11,175B | blocks=1 | -> /data/processed/chatter_vocab.json
+2026-09-29T06:31:19Z | HDFS_CLI_DOCKER | data/curated/depreciation_curve_curated.parquet | dir-table | 1,062,905 rows | size=7,764,469B | blocks=1 | -> /data/curated/depreciation_curve_curated.parquet
+2026-09-29T06:31:25Z | HDFS_CLI_DOCKER | data/curated/resale_velocity_curated.parquet | dir-table | 1,105 rows | size=14,409B | blocks=1 | -> /data/curated/resale_velocity_curated.parquet
+2026-09-29T06:31:31Z | HDFS_CLI_DOCKER | data/curated/regional_price_variance_curated.parquet | dir-table | 1,056,069 rows | size=9,723,529B | blocks=1 | -> /data/curated/regional_price_variance_curated.parquet
+=== zone push run finished 2026-09-29T06:31:31Z ===

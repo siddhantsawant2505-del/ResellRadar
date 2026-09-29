@@ -66,6 +66,38 @@ docker exec resellradar-namenode hdfs fsck /data/raw -files -blocks
 The committed snapshot of all three commands lives in `logs/hdfs_proof.txt`
 (ends with `The filesystem under path '/data/raw' is HEALTHY`).
 
+## Land the processed and curated zones (full medallion lake)
+
+The Spark stages write to the host disk (`data/processed/`, `data/curated/`) because they
+run through the Spark container with the repo bind-mounted. To complete the three-zone lake
+on the cluster, push the stage outputs up:
+
+```bash
+python scripts/push_zones_to_hdfs.py        # processed + curated + chatter_vocab.json
+python scripts/push_zones_to_hdfs.py --force   # re-push after a pipeline re-run
+```
+
+- Pushes parquet **directory tables** as whole directories, so they stay readable as
+  tables (`spark.read.parquet("hdfs://namenode:9000/data/processed/entity_resolved.parquet")`).
+- Re-runs skip unchanged entries (manifest: `data/hdfs_zone_sync_manifest.json`); a re-push
+  replaces the remote path (these zones are rebuildable artifacts — the raw zone stays the
+  immutable one, and this script never touches it).
+- Per-zone rows/bytes/blocks land in `logs/hdfs_zone_ingestion.txt`.
+
+Read-back proof (full scans from inside the cluster network — also proves blocks are
+healthy):
+
+```bash
+bash scripts/run_stage_in_docker.sh scripts/verify_hdfs_zones.py
+```
+
+Committed snapshot: `logs/hdfs_zone_readback.txt`. Expected (2026-09-29 run): processed
+1,972,679 rows (clean 21 cols / entity_resolved 24 cols), curated 1,062,905 / 1,105 /
+1,056,069 rows.
+
+Full HDFS tree after all three zone pushes: `/data/raw` (620.6 MB, immutable) →
+`/data/processed` (~787 MB) → `/data/curated` (~17.5 MB).
+
 ## Stop / reset
 
 ```bash
