@@ -1,0 +1,28 @@
+Learning chatter vocabulary (removability method)
+  input     : E:\Projects\ResellRadar\data\processed\clean_listings.parquet
+  output    : E:\Projects\ResellRadar\data\processed\chatter_vocab.json
+  min_df    : 50
+  rate_thr  : 0.85
+  max_phrase: 3
+  guard     : ['air', 'edge', 'fe', 'lite', 'max', 'mini', 'note', 'plus', 'pro', 'se', 'ultra']
+
+[generated]
+  distinct titles      : 52533
+  candidate tokens     : 187
+  learned chatter tokens: 53
+  vocabulary           : angeles atlanta austin boston box charlotte chicago clean columbus dallas denver esim factory fair for francisco fs go good houston imei indianapolis la like los miami minneapolis must nashville new no nyc on parts philadelphia philly phoenix pickup poor portland protector ready relist san scratches screen seattle selling sf unlocked used with york
+
+[mercari]
+  distinct titles      : 1117971
+  candidate tokens     : 7293
+  learned chatter tokens: 492
+  vocabulary           : 10c 11c 13s 15ml 32a 32c 32d 32dd 32ddd 34a 34d 34dd 34ddd 36a 36d 36dd 36ddd 38ddd 6c 6plus6splus 7c 8c 9c 9s accessories actual addiction addidas aeropostale afterglow agaci airplanes allison alphalete americana anchors apex arkansas aromatherapy arrows asymmetrical athletic athletica authentic avalanche aztec babygirl babytoddler background bandage bandeau baymax bcbgeneration bcbgmaxazria bedford begonia bifold billabong birthstone blackbrown blackgold blackpink blackred blacksilver blackwhite blowfish bluegreen bluraydvd bnip bnwot bnwt bodycon bombshell bongo bookbag bordeaux boyfriend braclet bridesmaid brighton bubblegum buildabear bumblebee burgundy buttonup cactus camouflage campus canister cardigans cardinal caroline celebration chaco charming checkbook cheerleading cheetah chihuahua chucks claires climacool climalite collegiate colombia colorblock commuter compression confetti constellation contouring coogi corona creatures cropped crossback crossbody crowns crunchy cupcakes cupshe customer customized damask dandelion dangling danielle danielles decree defender delias denali designed destroyed distressed dolphin dope draggle dragonfly dramatic dreamcatcher dressbarn drifit dryfit ebene ebony elegance elegant elephants embroidered everlasting exposed fabletics fallwinter feather feathers fendi fishbowl fitch flamingo flamingos flights flour flowy foamposites foams forever21 foxes francescas frankenstein fre freeshipping freshlook friendsgiving fuchsia fullsize fullzip fulton fuschia geometric giftcard girlfriend gladiator gleam goldstone goosebumps graduation graphing grayson greyblack gryffindor halfzip harleydavidson heatgear heathered highlighting highlow highneck highrise hightop hightops highwaist highwaisted hogwarts holister hollister hologram holographic homecoming homemade houndstooth household htf huaraches hubby hurley hyperwarm hyvent icloud iheartraves illuminated illuminating illumination incredible infrared inspirational iridescent isabelle itworks jacquard jansport jenner jeweled jewelers joanne juvenate kaleidoscope kds kickstand kimberly kipling kirsten knitted knots kodi kristen kylighter kyshadow lacey lacy layered lebrons leggins lesportsac libby lifeguard lifeproof lightweight limits lindsey liplicious livestrong locked lockit longsleeve loungefly lows lulus lunarglide maidenform maliboo mandala marble marbled maroon material mckenna medallion melville meow mercer microdermabrasion milkshake miraculous monogram monogrammed moodstruck moonchild moonstone morgans mosaic moschino motherhood multicolor multicolored multiway mustache mustard napa nation nd neff negotiable nibble nikes nordstrom nume nuud nwts obey obo oneill opalite originals osito otterbox oversized owls pacsun paisley pallet pallete pallets pallette paparazzi patchwork patriotic patterned peachy peacock penguala periwinkle personalized pfg piko pineapple pinkblack pleather plus6s polarized popcorn porefessional portofino potion powerpuff prescription princesses profusion pumpkins purses racerback rampage raybans razorback redblack reflective reindeer requested resort retool reva reversible ribbed ripped rollerball roshes rugby rvca saffiano saige sakroots salerm salmon saltwater savannah savenwt scalloped scottie seahorse seashell selma sequence sequined shampooconditioner shep shimmering shockproof shoreline silisponge skeletons skinfinish skulls skylar sleeveless slinky smallmedium snakes snakeskin snowboarding solo2 sonix spandex sparkly speck spigen spiked sportswear sprint starfish statement stefan stephanie stork storks strapless strawberries stripped sublime sunflower superstars sushi sweatpants sweats sweatsuit sweetheart sydney symmetry synchilla tanktop tartan tempo temptation tetris thanksgiving thermafit thrasher thumper tiedye tigger tignanello tillys timberlands timeless tinkerbell tlc tobi topsider translucent transparent trapeze trellis triangle trifold tween twopiece ucla umgee underarmour unicorn unicorns unlined unlocked unmasked velvetines volleyball walgreens wallflowers wanderlust watercolor waterfall watermelon wayfarer whiteblack wildflower windbreaker windsor wired wolves womans worthington wrislet wristlet wristlets xhilaration xsmall xxs ylg yum zaful zipup zodiac zumiez
+
+guard tokens present in learned vocab (must be 0): 0
+
+diagnostic: learned (generated) covers documented v2 list: 27/27
+diagnostic: learned (generated) beyond the documented list: 26 tokens (city names etc.)
+
+wrote E:\Projects\ResellRadar\data\processed\chatter_vocab.json
+  generated: 53 tokens
+  mercari: 492 tokens

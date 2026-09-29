@@ -12,7 +12,11 @@ dead code (it never feeds `entity_id`) yet costs **17,360,494,325 candidate pair
 entity key strips the product identity (storage/colour) instead of the listing chatter.
 Fixed copy: **`spark_jobs/entity_resolution_v2.py`** - same input path, output path and
 schema - same-product F1 **0.2341 -> 0.9802**, repost scores unchanged. Full evidence:
-`logs/acceptance_2026_09_29.md`; details in section 4c.
+`logs/acceptance_2026_09_29.md`; details in section 4c. Same day, **v3**
+(`spark_jobs/entity_resolution_v3.py` + `scripts/learn_chatter_vocab.py`) removed v2's one
+remaining limitation - the fixed 27-token chatter list - by learning a per-source vocabulary
+from the corpus itself: same **0.9802**, 24,859 more real-Mercari titles merged (end of
+section 4c).
 
 ## 1. Where the data lives
 
@@ -146,12 +150,25 @@ Repost detection is copied verbatim, so tasks B and C are unchanged.
 The leftover recall loss is coverage, not clustering: the 9,856 null-price rows that Stage 1
 drops have no prediction, capping recall at 98.03%.
 
-Your call now: adopt v2 into `entity_resolution.py` (your file was left untouched so the two
-can be diffed), or tell Person 1 which parts you want changed.
+Your call now: adopt **v3** (or v2) into `entity_resolution.py` (your file was left untouched
+so the fix can be diffed), or tell Person 1 which parts you want changed.
 
-**Caveat on that 0.9802.** The chatter list comes from the documented messiness spec, not
-from the answer key, but it is a *fixed* vocabulary - on the real Mercari half you would want
-a learned/extended one, so treat 0.9802 as an upper bound for this synthetic corpus.
+**Caveat on that 0.9802 (superseded the same day by v3).** The chatter list came from the
+documented messiness spec, not from the answer key, but it was a *fixed* vocabulary - on the
+real Mercari half a learned/extended one is needed. **Done in `spark_jobs/entity_resolution_v3.py`**:
+the fixed 27-token list is replaced by a vocabulary learned from the corpus per
+`source_platform` (`scripts/learn_chatter_vocab.py` -> `data/processed/chatter_vocab.json`).
+Method: a token/phrase is chatter iff deleting it from a title yields the exact sorted token
+set of another real title from the same source (>= 85% of containing titles, >= 50-title
+support); product tokens never pass (every phone title names its colour/storage). A small
+guard (`pro/max/plus/mini/ultra/se/air/edge/note/fe/lite`) keeps product-line suffixes that
+statistics alone would delete and merge iPhone Pro with Pro Max - this is the only
+hand-written piece. The job fails loudly if the artifact is missing; no truth is read at
+learn or job time. Learned: generated 53 tokens (redelivers the 27 documented ones plus 26
+city names), mercari 492 (real chatter: `bnwt`, `wristlet`, `distressed`, ...). Grade parity:
+Task A 1.0000 / 0.9611 / **0.9802** identical to v2; entities 1,065,540 -> **1,040,681**
+(-24,859 mercari merges nobody wrote down); structural checks 9/9. Stage 3 re-run on the v3
+entities: depreciation 1,062,905 / velocity 1,105 / regional 1,056,069 rows.
 
 **F3 (open, non-blocking).** `row_number().over(Window.orderBy("model_key"))` has no
 `partitionBy`, so all ~1.1M keys pass through a single partition.

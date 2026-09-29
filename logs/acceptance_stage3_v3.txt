@@ -1,0 +1,145 @@
+WARNING: Using incubator modules: jdk.incubator.vector
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+26/09/29 05:46:09 INFO SparkContext: Running Spark version 4.2.0
+26/09/29 05:46:09 INFO SparkContext: OS info Linux, 6.6.87.2-microsoft-standard-WSL2, amd64
+26/09/29 05:46:09 INFO SparkContext: Java version 17.0.19+10
+26/09/29 05:46:09 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/09/29 05:46:09 INFO ResourceUtils: ==============================================================
+26/09/29 05:46:09 INFO ResourceUtils: No custom resources configured for spark.driver.
+26/09/29 05:46:09 INFO ResourceUtils: ==============================================================
+26/09/29 05:46:09 INFO SparkContext: Submitted application: ResellRadar-FeatureEngineering
+26/09/29 05:46:09 INFO SecurityManager: Changing view acls to: spark
+26/09/29 05:46:09 INFO SecurityManager: Changing modify acls to: spark
+26/09/29 05:46:09 INFO SecurityManager: Changing view acls groups to: spark
+26/09/29 05:46:09 INFO SecurityManager: Changing modify acls groups to: spark
+26/09/29 05:46:09 INFO SecurityManager: SecurityManager: authentication disabled; ui acls disabled; users with view permissions: spark groups with view permissions: EMPTY; users with modify permissions: spark; groups with modify permissions: EMPTY; RPC SSL disabled
+26/09/29 05:46:09 INFO Utils: Successfully started service 'sparkDriver' on port 41501.
+26/09/29 05:46:09 INFO SparkEnv: Registering MapOutputTracker
+26/09/29 05:46:09 INFO SparkEnv: Registering BlockManagerMaster
+26/09/29 05:46:09 INFO BlockManagerMasterEndpoint: Using org.apache.spark.storage.DefaultTopologyMapper for getting topology information
+26/09/29 05:46:09 INFO BlockManagerMasterEndpoint: BlockManagerMasterEndpoint up
+26/09/29 05:46:09 INFO SparkEnv: Registering BlockManagerMasterHeartbeat
+26/09/29 05:46:09 INFO DiskBlockManager: Created local directory at /tmp/blockmgr-02fe463c-7340-4607-8fd7-4aa1dc7f853b
+26/09/29 05:46:09 INFO SparkEnv: Registering OutputCommitCoordinator
+26/09/29 05:46:10 INFO ResourceProfile: Default ResourceProfile created, executor resources: Map(cores -> name: cores, amount: 1, script: , vendor: , memory -> name: memory, amount: 1024, script: , vendor: , offHeap -> name: offHeap, amount: 0, script: , vendor: ), task resources: Map(cpus -> name: cpus, amount: 1.0)
+26/09/29 05:46:10 INFO ResourceProfile: Limiting resource is cpu
+26/09/29 05:46:10 INFO ResourceProfileManager: Added ResourceProfile id: 0
+26/09/29 05:46:10 INFO SecurityManager: Changing view acls to: spark
+26/09/29 05:46:10 INFO SecurityManager: Changing modify acls to: spark
+26/09/29 05:46:10 INFO SecurityManager: Changing view acls groups to: spark
+26/09/29 05:46:10 INFO SecurityManager: Changing modify acls groups to: spark
+26/09/29 05:46:10 INFO SecurityManager: SecurityManager: authentication disabled; ui acls disabled; users with view permissions: spark groups with view permissions: EMPTY; users with modify permissions: spark; groups with modify permissions: EMPTY; RPC SSL disabled
+26/09/29 05:46:10 INFO Executor: Starting executor ID driver on host 00f00e1d33e8
+26/09/29 05:46:10 INFO Executor: Running Spark version 4.2.0
+26/09/29 05:46:10 INFO Executor: OS info Linux, 6.6.87.2-microsoft-standard-WSL2, amd64
+26/09/29 05:46:10 INFO Executor: Java version 17.0.19+10
+26/09/29 05:46:10 INFO Executor: Starting executor with user classpath (userClassPathFirst = false): ''
+26/09/29 05:46:10 INFO Executor: Created or updated repl class loader org.apache.spark.util.MutableURLClassLoader@56fece6c for default.
+26/09/29 05:46:10 INFO Utils: Successfully started service 'org.apache.spark.network.netty.NettyBlockTransferService' on port 37485.
+26/09/29 05:46:10 INFO NettyBlockTransferService: Server created on 00f00e1d33e8:37485
+26/09/29 05:46:10 INFO BlockManager: Using org.apache.spark.storage.RandomBlockReplicationPolicy for block replication policy
+26/09/29 05:46:10 INFO BlockManagerMaster: Registering BlockManager BlockManagerId(driver, 00f00e1d33e8, 37485, None)
+26/09/29 05:46:10 INFO BlockManagerMasterEndpoint: Registering block manager 00f00e1d33e8:37485 with 3.4 GiB RAM, BlockManagerId(driver, 00f00e1d33e8, 37485, None)
+26/09/29 05:46:10 INFO BlockManagerMaster: Registered BlockManager BlockManagerId(driver, 00f00e1d33e8, 37485, None)
+26/09/29 05:46:10 INFO BlockManager: Initialized BlockManager: BlockManagerId(driver, 00f00e1d33e8, 37485, None)
+Reading:
+/work/data/processed/entity_resolved.parquet
+
+========== DATASET ==========
+Total Records: 1972679
+
+========== DEPRECIATION CURVE ==========
+Depreciation curve created.
++---------+------------------+-------------+-------------+------------+--------------+--------------------+
+|entity_id|listing_age_months|listing_count|average_price|median_price|baseline_price|price_change_percent|
++---------+------------------+-------------+-------------+------------+--------------+--------------------+
+|1        |NULL              |19           |16.79        |15.0        |NULL          |NULL                |
+|2        |NULL              |1            |14.0         |14.0        |NULL          |NULL                |
+|3        |NULL              |1            |7.0          |7.0         |NULL          |NULL                |
+|4        |NULL              |1            |7.0          |7.0         |NULL          |NULL                |
+|5        |NULL              |1            |23.0         |23.0        |NULL          |NULL                |
+|6        |NULL              |1            |12.0         |12.0        |NULL          |NULL                |
+|7        |NULL              |1            |27.0         |27.0        |NULL          |NULL                |
+|8        |NULL              |1            |15.0         |15.0        |NULL          |NULL                |
+|9        |NULL              |1            |13.0         |13.0        |NULL          |NULL                |
+|10       |NULL              |1            |20.0         |20.0        |NULL          |NULL                |
+|11       |NULL              |1            |7.0          |7.0         |NULL          |NULL                |
+|12       |NULL              |1            |6.0          |6.0         |NULL          |NULL                |
+|13       |NULL              |1            |25.0         |25.0        |NULL          |NULL                |
+|14       |NULL              |1            |16.0         |16.0        |NULL          |NULL                |
+|15       |NULL              |1            |10.0         |10.0        |NULL          |NULL                |
+|16       |NULL              |1            |35.0         |35.0        |NULL          |NULL                |
+|17       |NULL              |1            |25.0         |25.0        |NULL          |NULL                |
+|18       |NULL              |1            |24.0         |24.0        |NULL          |NULL                |
+|19       |NULL              |1            |8.0          |8.0         |NULL          |NULL                |
+|20       |NULL              |1            |156.0        |156.0       |NULL          |NULL                |
++---------+------------------+-------------+-------------+------------+--------------+--------------------+
+only showing top 20 rows
+
+========== RESALE VELOCITY ==========
+Resale velocity table created.
++---------+-----------------+---------------+------------------+
+|entity_id|delisted_listings|avg_resale_days|median_resale_days|
++---------+-----------------+---------------+------------------+
+|45699    |1                |5.0            |5                 |
+|112826   |4                |8.75           |7                 |
+|45700    |2                |9.0            |8                 |
+|43005    |4                |10.0           |9                 |
+|227346   |1                |12.0           |12                |
+|40943    |2                |12.5           |12                |
+|148766   |6                |14.0           |12                |
+|41128    |1                |16.0           |16                |
+|112771   |4                |16.75          |14                |
+|45823    |3                |17.0           |17                |
+|112797   |2                |17.5           |8                 |
+|148767   |3                |17.67          |18                |
+|112776   |7                |17.86          |13                |
+|41132    |10               |17.9           |13                |
+|45818    |5                |18.0           |11                |
+|41024    |4                |19.5           |7                 |
+|112830   |11               |19.55          |15                |
+|45820    |3                |19.67          |17                |
+|112766   |10               |20.4           |12                |
+|40941    |4                |22.0           |6                 |
++---------+-----------------+---------------+------------------+
+only showing top 20 rows
+
+========== REGIONAL PRICE VARIANCE ==========
+Regional price variance table created.
++---------+---------------+-------------+-------------+------------+------------------+------------------+--------------------+
+|entity_id|location_region|listing_count|average_price|price_stddev|min_regional_price|max_regional_price|regional_price_range|
++---------+---------------+-------------+-------------+------------+------------------+------------------+--------------------+
+|28       |NULL           |1            |7.0          |NULL        |7.0               |7.0               |0.0                 |
+|31       |NULL           |1            |31.0         |NULL        |31.0              |31.0              |0.0                 |
+|34       |NULL           |1            |11.0         |NULL        |11.0              |11.0              |0.0                 |
+|53       |NULL           |1            |11.0         |NULL        |11.0              |11.0              |0.0                 |
+|65       |NULL           |1            |7.0          |NULL        |7.0               |7.0               |0.0                 |
+|78       |NULL           |1            |14.0         |NULL        |14.0              |14.0              |0.0                 |
+|81       |NULL           |1            |13.0         |NULL        |13.0              |13.0              |0.0                 |
+|85       |NULL           |1            |4.0          |NULL        |4.0               |4.0               |0.0                 |
+|101      |NULL           |1            |10.0         |NULL        |10.0              |10.0              |0.0                 |
+|108      |NULL           |1            |9.0          |NULL        |9.0               |9.0               |0.0                 |
+|115      |NULL           |1            |44.0         |NULL        |44.0              |44.0              |0.0                 |
+|126      |NULL           |1            |10.0         |NULL        |10.0              |10.0              |0.0                 |
+|133      |NULL           |1            |16.0         |NULL        |16.0              |16.0              |0.0                 |
+|137      |NULL           |1            |15.0         |NULL        |15.0              |15.0              |0.0                 |
+|148      |NULL           |1            |31.0         |NULL        |31.0              |31.0              |0.0                 |
+|155      |NULL           |1            |11.0         |NULL        |11.0              |11.0              |0.0                 |
+|183      |NULL           |1            |26.0         |NULL        |26.0              |26.0              |0.0                 |
+|193      |NULL           |1            |16.0         |NULL        |16.0              |16.0              |0.0                 |
+|210      |NULL           |1            |12.0         |NULL        |12.0              |12.0              |0.0                 |
+|211      |NULL           |1            |8.0          |NULL        |8.0               |8.0               |0.0                 |
++---------+---------------+-------------+-------------+------------+------------------+------------------+--------------------+
+only showing top 20 rows
+
+========== SAVING CURATED DATA ==========
+
+SUCCESS!
+Depreciation curve saved to:
+/work/data/curated/depreciation_curve_curated.parquet
+
+Resale velocity saved to:
+/work/data/curated/resale_velocity_curated.parquet
+
+Regional price variance saved to:
+/work/data/curated/regional_price_variance_curated.parquet

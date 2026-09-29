@@ -5,7 +5,10 @@
 **Verdict**: `clean_normalize.py` **accepted**; `feature_engineering.py` **accepted**;
 `entity_resolution.py` **as uploaded cannot complete** (dead 17.4-billion-pair join) and its
 entity definition was wrong - **fixed in `spark_jobs/entity_resolution_v2.py`**, which now
-scores **0.9802** on the same-product task instead of **0.2341**.
+scores **0.9802** on the same-product task instead of **0.2341**. A same-day follow-up,
+**`spark_jobs/entity_resolution_v3.py`**, replaces v2's fixed 27-token chatter list with a
+vocabulary **learned from the corpus** (`scripts/learn_chatter_vocab.py`) - same **0.9802**
+on the graded rows, 24,859 more real-Mercari titles merged (section 3c).
 
 Artifacts reviewed (as uploaded, mtimes 2026-09-29 00:02):
 
@@ -187,15 +190,68 @@ bound for synthetic data with a finite chatter generator. On the real Mercari ha
 corpus the same idea needs a learned/extended vocabulary (or a bounded similarity pass), and
 the number should be expected to be lower there.
 
-## 4. Stage 3 `feature_engineering.py` - ACCEPTED (re-run on the v2 entities)
+## 3c. v3 - the chatter vocabulary is learned from the corpus, not hardcoded
+
+v2's caveat above said the fixed 27-token list was a synthetic-corpus upper bound: real
+marketplace titles bring their own chatter (`bnwt`, `wristlet`, `distressed`, ...) that no
+hand-written list can anticipate. **`spark_jobs/entity_resolution_v3.py`** removes that
+limitation: the job contains **no generator constants** - its chatter vocabulary is a build
+artifact learned from the Stage 1 output alone (never from ground truth).
+
+Method (`scripts/learn_chatter_vocab.py` -> `data/processed/chatter_vocab.json`):
+
+- **Removability signal.** A token (or 2-/3-token phrase) is chatter iff deleting it from a
+  title yields the **exact sorted token set of another real title from the same source**, in
+  >= 85% of the titles that contain it (>= 50 distinct-title support). Surface-optional words
+  ("good", "with box", "- must go") repeatedly fail a deletion test against real sibling
+  titles; product tokens never do - every phone title names its colour and storage, so
+  `{apple, iphone, 13}` minus `13` matches no real title. Exact-set (not subset) matching
+  also avoids the accessory trap (case titles merely *contain* the phone tokens).
+- **Semantic guard** - the only hand-written piece: product-line suffixes
+  `pro/max/plus/mini/ultra/se/air/edge/note/fe/lite` are never removable. Statistics alone
+  mark them chatter ("pro" is absent from ~50% of its titles) but they are catalog identity:
+  dropping them merges iPhone 15 Pro with iPhone 15 Pro Max (prototype measured precision
+  0.9621 unguarded vs 1.0000 guarded).
+- **Per source**: generated and mercari vocabularies are learned separately; the job picks
+  the row's source vocabulary.
+- The job **fails loudly** with build instructions if the artifact is missing.
+
+What the corpus taught (min_df 50, rate 0.85, max phrase 3 - `logs/learn_chatter_vocab.txt`):
+
+| source | distinct titles | learned chatter tokens |
+|---|---|---|
+| generated | 52,533 | **53** - redelivers all 27 documented v2 tokens (27/27) + 26 city names |
+| mercari | 1,117,971 | **492** - real marketplace chatter (`unlocked`, `bnwt`, `wristlet`, `distressed`, `freeshipping`, ...) |
+
+### v3 results
+
+`bash scripts/run_stage_in_docker.sh spark_jobs/entity_resolution_v3.py`, then
+`scripts/accept_pipeline.py stage2` and `scripts/evaluate_er.py`:
+
+| | v2 (fixed list) | v3 (learned vocab) |
+|---|---|---|
+| entities | 1,065,540 | **1,040,681** (-24,859: mercari titles the learned vocab merges) |
+| Task A - same product | 1.0000 / 0.9611 / **0.9802** | 1.0000 / 0.9611 / **0.9802** (identical) |
+| Task B / C - repost | 0.9826 / 0.9621 | 0.9826 / 0.9621 (verbatim block) |
+| structural checks | 9/9 | **9/9** |
+
+On the graded (generated) rows v3 keys exactly like v2 - the learned vocabulary redelivers
+the fixed list (27/27) plus the city names, and grade parity is the proof that nothing was
+hardcoded into that result. The gain is on the real half: 24,859 additional mercari entities
+merged through tokens nobody wrote down. Task A recall is still capped at 0.9611 by the
+98.03% coverage (the 9,856 null-price rows Stage 1 drops - unchanged, still not an ER issue).
+
+Stage 3 was re-run on the v3 entities (section 4).
+
+## 4. Stage 3 `feature_engineering.py` - ACCEPTED (re-run on the v2 and v3 entities)
 
 Exit 0, three tables written to `data/curated/`:
 
 | Table | Rows | Columns |
 |---|---|---|
-| `depreciation_curve_curated.parquet` | 1,087,764 | entity_id, listing_age_months, listing_count, average_price, median_price, baseline_price, price_change_percent |
+| `depreciation_curve_curated.parquet` | 1,087,764 (v2) / 1,062,905 (v3) | entity_id, listing_age_months, listing_count, average_price, median_price, baseline_price, price_change_percent |
 | `resale_velocity_curated.parquet` | 1,105 | entity_id, delisted_listings, avg_resale_days, median_resale_days |
-| `regional_price_variance_curated.parquet` | 1,080,928 | entity_id, location_region, listing_count, average_price, price_stddev, min_regional_price, max_regional_price, regional_price_range |
+| `regional_price_variance_curated.parquet` | 1,080,928 (v2) / 1,056,069 (v3) | entity_id, location_region, listing_count, average_price, price_stddev, min_regional_price, max_regional_price, regional_price_range |
 
 `scripts/accept_pipeline.py stage3` -> **6/6 PASS**.
 
@@ -228,7 +284,9 @@ Caveats for the dashboard (expected from the source contract, but they shape eve
 
 1. **F3**: `row_number().over(Window.orderBy("model_key"))` has no `partitionBy`, so all
    ~1.1M keys pass through a single partition. It works, but it is a serialization point.
-2. **Chatter vocabulary portability** - see the caveat in 3.
+2. ~~Chatter vocabulary portability~~ - **resolved by v3** (section 3c): the vocabulary is
+   now learned per source from the corpus; the only hand-written piece is the 11-token
+   product-line guard, documented in the job header and the learner.
 3. **Unowned decision**: who merges `entity_resolution_v2.py` into
    `spark_jobs/entity_resolution.py` (Person 2's file was left untouched so the fix can be
    diffed).
@@ -239,9 +297,11 @@ Caveats for the dashboard (expected from the source contract, but they shape eve
 ## 7. Reproduce
 
 ```bash
-docker compose up -d && docker compose up -d --no-deps datanode   # cluster
+docker compose up -d                                              # cluster (healthcheck fixed)
+python scripts/learn_chatter_vocab.py                             # v3: learn chatter vocabulary
 scripts/run_stage_in_docker.sh spark_jobs/clean_normalize.py
-scripts/run_stage_in_docker.sh spark_jobs/entity_resolution_v2.py
+scripts/run_stage_in_docker.sh spark_jobs/entity_resolution_v2.py # fixed list (superseded)
+scripts/run_stage_in_docker.sh spark_jobs/entity_resolution_v3.py # learned vocab (current)
 scripts/run_stage_in_docker.sh spark_jobs/feature_engineering.py
 python scripts/accept_pipeline.py all --out logs/acceptance_checks.md
 python scripts/evaluate_er.py --pred data/processed/entity_resolved.parquet
@@ -251,5 +311,7 @@ Evidence files (`.txt` because `.gitignore` excludes `*.log`): `logs/acceptance_
 `logs/acceptance_stage2_as_uploaded_stall.txt` (the 16m32s as-uploaded stall),
 `logs/acceptance_stage2_bounded.txt`, `logs/acceptance_stage2_v2.txt`,
 `logs/acceptance_stage3.txt`, `logs/diag_lsh_candidates.txt` (the 17.4B measurement), plus
-`logs/acceptance_checks.md`, `logs/er_report_stage2_bounded.md`, `logs/er_report_stage2_v2.md`.
+`logs/acceptance_checks.md`, `logs/er_report_stage2_bounded.md`, `logs/er_report_stage2_v2.md`;
+v3 run: `logs/learn_chatter_vocab.txt`, `logs/acceptance_stage2_v3.txt`,
+`logs/acceptance_stage3_v3.txt`, `logs/er_report_stage2_v3.md`, `logs/acceptance_checks_v3.md`.
 Generated parquet outputs stay out of git (`data/processed/*`, `data/curated/*`).
