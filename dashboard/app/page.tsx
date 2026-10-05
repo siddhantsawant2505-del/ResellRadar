@@ -7,9 +7,11 @@ import { LiveMetricsPanel } from '../components/LiveMetricsPanel';
 import { LogTerminalStream } from '../components/LogTerminalStream';
 import { RawDataGrid } from '../components/RawDataGrid';
 import { HDFSPanel } from '../components/HDFSPanel';
+import { ClusterPanel } from '../components/ClusterPanel';
 
 export default function Home() {
   const [serverState, setServerState] = useState<any>(null);
+  const [cluster, setCluster] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [gridData, setGridData] = useState<{ items: any[]; total: number; page: number }>({
     items: [],
@@ -30,6 +32,18 @@ export default function Home() {
       }
     } catch (err) {
       console.error('Failed to fetch status', err);
+    }
+  }, []);
+
+  // Fetch Spark Standalone cluster telemetry (worker units, applications)
+  const fetchCluster = useCallback(async () => {
+    try {
+      const res = await fetch('/api/cluster');
+      if (res.ok) {
+        setCluster(await res.json());
+      }
+    } catch (err) {
+      console.error('Failed to fetch cluster telemetry', err);
     }
   }, []);
 
@@ -76,17 +90,19 @@ export default function Home() {
   // Polling loop
   useEffect(() => {
     fetchStatus();
+    fetchCluster();
     fetchLogs();
     fetchPreview();
 
     const interval = setInterval(() => {
       fetchStatus();
+      fetchCluster();
       fetchLogs();
       fetchPreview();
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [fetchStatus, fetchLogs, fetchPreview]);
+  }, [fetchStatus, fetchCluster, fetchLogs, fetchPreview]);
 
   // Trigger scrape handler
   const handleStartScrape = async (category: string, target: number, threads: number) => {
@@ -151,6 +167,9 @@ export default function Home() {
             <LogTerminalStream logs={logs} />
           </div>
         </div>
+
+        {/* Level 2.5: Distributed batch cluster (branched worker units) */}
+        <ClusterPanel cluster={cluster} />
 
         {/* Level 3: HDFS Sync Control */}
         <HDFSPanel hdfsData={serverState?.hdfs_telemetry || {}} onSync={handleSyncHDFS} />

@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Activity, HardDrive, Cpu } from 'lucide-react';
+import Link from 'next/link';
+import { RefreshCw, Activity, HardDrive, Cpu, BarChart3 } from 'lucide-react';
 
 interface HeaderNavProps {
   state: any;
@@ -38,6 +39,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({ state, onRefresh }) => {
           {[
             { href: '#metrics', label: 'Metrics' },
             { href: '#controller', label: 'Controller' },
+            { href: '#cluster', label: 'Cluster' },
             { href: '#hdfs', label: 'HDFS sync' },
             { href: '#stream', label: 'Raw stream' },
           ].map((item) => (
@@ -49,6 +51,13 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({ state, onRefresh }) => {
               {item.label}
             </a>
           ))}
+          <Link
+            href="/analytics"
+            className="px-3 py-1.5 text-sm text-primary hover:text-primary-dim rounded transition-colors duration-150 flex items-center gap-1.5"
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            Analytics
+          </Link>
         </nav>
       </div>
 

@@ -1,141 +1,304 @@
-# ResellRadar — Data Ingestion & Raw Storage Layer (Person 1)
+# ResellRadar
 
-**ResellRadar** is a Big Data Analytics mini-project featuring a distributed data pipeline that mines second-hand marketplace listings (Mobile Phones and Furniture) to compute product depreciation curves, resale velocity, and regional price arbitrage opportunities.
+ResellRadar is a full-stack resale marketplace analytics project that combines synthetic listing generation, raw data ingestion, HDFS persistence, Apache Spark processing, and a telemetry dashboard for monitoring the pipeline.
 
-This component implements **Person 1's Role: Data Engineering (Ingestion + Raw Storage Layer)**. The downstream Big Data Processing (PySpark cleaning, MinHash LSH entity resolution) and Graph/Visualization layers are owned by teammates and interface via clean schema contracts.
+The repository currently models a realistic end-to-end data engineering pipeline for second-hand mobile phones and furniture listings, including:
 
----
-
-## 🛠️ Tech Stack & Architecture
-
-- **Data Ingestion Engine**: Scrapy Spider ([`scraper/spider.py`](scraper/spider.py)) & High-Throughput Synthetic Listing Generator ([`scraper/generator.py`](scraper/generator.py)) targeting **50,000+ listings**.
-- **Rate Limiting & Resilience**: AutoThrottle, request delays, user-agent rotation, and exponential backoff retry middleware ([`scraper/config.py`](scraper/config.py)).
-- **Data Quality Gate**: Schema & data-quality validator enforcing the raw-zone contract with a non-zero exit code on failure ([`scraper/validator.py`](scraper/validator.py)).
-- **JSONL Handoff Converter**: Streams raw JSON batches into JSON Lines for Person 2's Spark pipeline ([`scraper/jsonl_converter.py`](scraper/jsonl_converter.py)).
-- **HDFS Cluster Setup**: Pseudo-distributed Hadoop configuration guide ([`docs/HDFS_SETUP.md`](docs/HDFS_SETUP.md)).
-- **Raw Lake Zone**: Immutable JSON batched storage ([`data/raw/`](data/raw/)).
-- **HDFS Ingestion Engine**: Python HDFS sync module ([`hdfs_uploader.py`](hdfs_uploader.py)) supporting single-node Hadoop WebHDFS (`http://localhost:9870`), HDFS CLI, and local pseudo-emulated cluster mode.
-- **Backend Control Server**: FastAPI server ([`server.py`](server.py)) with REST & live telemetry streaming APIs.
-- **Control Panel Dashboard**: Next.js 14 App Router UI generated from Stitch MCP design tokens and polished with cyber-telemetry aesthetics ([`dashboard/`](dashboard/)).
-- **Interface Contract**: Schema specification for downstream PySpark jobs ([`scraper/SCHEMA.md`](scraper/SCHEMA.md)).
+- synthetic batch generation at scale
+- raw schema validation
+- HDFS upload orchestration
+- Spark-based cleaning and entity resolution
+- curated analytics tables for price and resale trends
+- a live monitoring dashboard for ingest jobs and pipeline telemetry
 
 ---
 
-## 📁 Repository Structure
+## Project goal
+
+The project is designed to simulate a production-style data pipeline for resale market intelligence:
+
+- generate large volumes of realistic listing data
+- normalize it into a shared schema
+- resolve duplicate or near-duplicate inventory records
+- detect repost patterns
+- compute depreciation, resale velocity, and regional variance metrics
+- expose the pipeline through a single monitoring interface
+
+---
+
+## Architecture overview
+
+```text
+Synthetic dataset / scraper input
+        ↓
+raw JSON batches in data/raw
+        ↓
+validation + schema checks
+        ↓
+HDFS sync / raw lake storage
+        ↓
+PySpark cleaning + normalization
+        ↓
+entity resolution + repost detection
+        ↓
+feature engineering / curated parquet tables
+        ↓
+dashboard telemetry + raw preview UI
+```
+
+This repository is not a single script; it is a small data platform with several moving parts across Python, Spark, HDFS, Docker, and Next.js.
+
+---
+
+## Key components
+
+### 1. Data generation and raw ingestion
+
+- `scraper/generator.py`: lightweight synthetic listing generator used by the monitoring API to create raw batches in `data/raw`.
+- `generator/generate_data.py`: larger-scale synthetic data generator that creates partitioned runs in `data/raw/generated/` and ground-truth outputs in `data/ground_truth/`.
+- `scraper/validator.py`: validates raw-zone listings against the project schema and data-quality rules.
+- `scraper/jsonl_converter.py`: converts JSON batches into JSONL for downstream processing.
+- `server.py`: FastAPI service that exposes job-control, status, logs, HDFS sync, and preview endpoints.
+- `hdfs_uploader.py`: pushes un-synced raw files into HDFS or a pseudo-distributed local equivalent.
+
+### 2. Spark processing pipeline
+
+- `spark_jobs/clean_normalize.py`: standardizes raw listing fields, cleans text, removes incomplete rows, and writes parquet outputs.
+- `spark_jobs/entity_resolution.py`: resolves related listings and flags likely reposts using normalized-title matching and entity IDs.
+- `spark_jobs/feature_engineering.py`: builds curated analytics tables such as depreciation curves and price variance summaries.
+- `scripts/accept_pipeline.py`: validates stage outputs against expected counts and schema expectations.
+
+### 3. Dashboard and monitoring
+
+- `dashboard/`: Next.js app that polls the FastAPI server for job status, live logs, HDFS status, and raw preview data.
+- `dashboard/components/`: UI panels for metrics, job triggers, log streams, HDFS status, and the data grid.
+
+### 4. Infrastructure and docs
+
+- `docker-compose.yml`: local single-node HDFS stack.
+- `docker/`: Hadoop configuration files.
+- `docs/`: setup and project documentation.
+- `logs/`: acceptance and validation evidence artifacts.
+
+---
+
+## Repository layout
 
 ```text
 ResellRadar/
+├── dashboard/                    # Next.js monitoring UI
+│   ├── app/
+│   ├── components/
+│   ├── package.json
+│   └── ...
+├── data/
+│   ├── raw/                     # raw JSON listing batches
+│   ├── processed/               # Spark stage outputs
+│   ├── curated/                 # analytics tables
+│   ├── ground_truth/            # generated truth data for evaluation
+│   └── hdfs_sync_manifest.json
+├── docker/                      # Hadoop / HDFS container config
+├── docs/                        # setup and process docs
+├── generator/
+│   ├── calibration.py
+│   └── generate_data.py         # large synthetic data generation job
+├── logs/                        # validation and acceptance outputs
 ├── scraper/
 │   ├── __init__.py
-│   ├── config.py           # Scrapy autothrottle, delays & retry rules
-│   ├── spider.py           # Scrapy spider for marketplace scraping
-│   ├── generator.py        # 50,000+ synthetic listing generator
-│   ├── validator.py        # Raw schema & data-quality gate (SCHEMA.md)
-│   ├── jsonl_converter.py  # Raw JSON -> JSONL handoff for Person 2 (Spark)
-│   └── SCHEMA.md           # Raw JSON schema contract for Person 2 (Spark pipeline)
-├── hdfs_uploader.py        # HDFS push engine (WebHDFS / CLI / Pseudo-Emulated)
-├── docs/
-│   ├── SPARK_SETUP.md      # Person 2: PySpark environment & run guide
-│   └── HDFS_SETUP.md       # Person 1: Hadoop/HDFS cluster setup guide
-├── server.py               # FastAPI control server (ports & REST endpoints)
-├── dashboard/              # Next.js 14 Control Panel Web App (Stitch UI)
-│   ├── app/                # Layouts & page views
-│   ├── components/         # Telemetry cards, Job triggers, Log stream, HDFS panel, Data preview
-│   ├── tailwind.config.js  # Stitch design system tokens
-│   └── package.json
-├── data/
-│   ├── raw/                # Raw immutable JSON lake zone
-│   ├── processed/          # Placeholder for Person 2 (PySpark cleaned data)
-│   └── curated/            # Placeholder for Person 3 (Parquet & Graph export)
-├── requirements.txt        # Python backend dependencies
-├── .gitignore              # Repository gitignore rules
-└── README.md
+│   ├── config.py
+│   ├── generator.py             # lightweight listing generator
+│   ├── jsonl_converter.py
+│   ├── SCHEMA.md
+│   ├── spider.py
+│   ├── validator.py
+│   └── ...
+├── scripts/
+│   ├── accept_pipeline.py
+│   ├── evaluate_er.py
+│   ├── learn_chatter_vocab.py
+│   ├── push_to_hdfs.py
+│   ├── qa_generated.py
+│   └── ...
+├── spark_jobs/
+│   ├── clean_normalize.py
+│   ├── entity_resolution.py
+│   ├── entity_resolution_v2.py
+│   ├── entity_resolution_v3.py
+│   ├── feature_engineering.py
+│   └── ...
+├── .gitignore
+├── docker-compose.yml
+├── hdfs_uploader.py
+├── requirements.txt
+├── server.py
+├── README.md
+└── ...
 ```
 
 ---
 
-## 🚀 Quick Start Guide
+## Typical data flow
 
-### 1. Python Virtual Environment Setup
+### Raw generation
 
 ```bash
-# Create Python virtual environment
-python -m venv venv
-
-# Activate virtual environment
-# Windows (PowerShell):
-.\venv\Scripts\Activate.ps1
-# Linux / macOS:
-source venv/bin/activate
-
-# Install backend dependencies
-pip install -r requirements.txt
+python -c "from scraper.generator import generate_batch; generate_batch(count=500, category='all')"
 ```
 
-### 2. Start FastAPI Backend Control Server
+This produces raw JSON batches under `data/raw/` using the simulated marketplace generator.
+
+### Large synthetic generation run
+
+```bash
+python generator/generate_data.py --rows 10000
+```
+
+This is the project’s higher-volume synthetic-generation path and writes run-partitioned output under `data/raw/generated/` plus ground-truth files under `data/ground_truth/`.
+
+### Validation and schema checks
+
+```bash
+python -m scraper.validator
+```
+
+This checks the raw dataset against the contract defined in `scraper/SCHEMA.md` and exits non-zero if the data does not meet expected quality rules.
+
+### Prepare the Spark handoff
+
+```bash
+python -m scraper.jsonl_converter
+```
+
+This converts the raw JSON batches to a JSONL handoff format for the Spark pipeline.
+
+### Spark stages
+
+```bash
+python spark_jobs/clean_normalize.py
+python spark_jobs/entity_resolution.py
+python spark_jobs/feature_engineering.py
+```
+
+Expected outputs include:
+
+- `data/processed/clean_listings.parquet`
+- `data/processed/entity_resolved.parquet`
+- `data/curated/depreciation_curve_curated.parquet`
+- `data/curated/resale_velocity_curated.parquet`
+- `data/curated/regional_price_variance_curated.parquet`
+
+### Acceptance checks
+
+```bash
+python scripts/accept_pipeline.py all --out logs/acceptance_checks.md
+```
+
+This verifies the stage outputs against expected counts, schema expectations, and pipeline contracts.
+
+---
+
+## HDFS setup
+
+The project includes a Docker-based Hadoop single-node setup for local experiments:
+
+```bash
+docker compose -f docker-compose.yml up -d
+```
+
+This starts the NameNode/DataNode stack for local HDFS access. Detailed setup guidance is in `docs/HDFS_SETUP.md` and `docs/SPARK_SETUP.md`.
+
+To push raw files into HDFS:
+
+```bash
+python hdfs_uploader.py
+```
+
+or the project-specific push helper if present in the scripts folder.
+
+---
+
+## Dashboard and control server
+
+The Python backend exposes state and control endpoints for the dashboard:
 
 ```bash
 python server.py
-# Server runs on http://127.0.0.1:8000
 ```
 
-### 3. Start Next.js Control Panel UI
+The server listens by default on `http://127.0.0.1:8000` and provides routes for:
+
+- telemetry status
+- simulate scrape jobs
+- stop jobs
+- HDFS sync
+- logs
+- raw data preview
+
+Start the dashboard separately:
 
 ```bash
 cd dashboard
 npm install
 npm run dev
-# Dashboard opens at http://localhost:3000
+```
+
+Then open the UI at:
+
+- `http://localhost:3000`
+
+---
+
+## Environment setup
+
+### Python dependencies
+
+```bash
+python -m venv venv
+# Windows PowerShell
+.\venv\Scripts\Activate.ps1
+# Linux / macOS
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Frontend dependencies
+
+```bash
+cd dashboard
+npm install
 ```
 
 ---
 
-## ⚡ Command Line Operations
+## Recommended local workflow
 
-### Generate 50,000+ Listing Sample Batch
-
-```bash
-python -c "from scraper.generator import generate_batch; generate_batch(count=50000, category='all')"
-# Outputs: data/raw/raw_all_YYYY_MM_DD_HHMMSS.json (~40 MB)
-```
-
-### Push Raw Data to HDFS
+For a full local demo, the typical sequence is:
 
 ```bash
-python hdfs_uploader.py
-# Pushes un-synced JSON files from data/raw/ to HDFS path /data/raw/
-```
-
-### Validate Raw Data Quality
-
-```bash
+python generator/generate_data.py --rows 10000
 python -m scraper.validator
-# Validates data/raw/*.json against scraper/SCHEMA.md
-# Checks: required fields, types, ISO-8601 timestamps, price > 0,
-# controlled vocabularies, delisted >= posted, cross-file ID uniqueness
-# Exit code 1 on failure (CI-friendly quality gate)
-```
-
-### Convert Raw JSON to JSONL (Person 1 -> Person 2 handoff)
-
-```bash
 python -m scraper.jsonl_converter
-# Rebuilds data/processed/raw_listings.jsonl from all data/raw/*.json batches
-# This is the exact input path consumed by spark_jobs/clean_normalize.py
+python spark_jobs/clean_normalize.py
+python spark_jobs/entity_resolution.py
+python spark_jobs/feature_engineering.py
+python scripts/accept_pipeline.py all --out logs/acceptance_checks.md
+python server.py
+cd dashboard && npm run dev
 ```
 
-### Full 50k+ Deliverable Run
-
-```bash
-python -c "from scraper.generator import generate_batch; generate_batch(count=50000, category='all')"
-python -m scraper.validator
-python hdfs_uploader.py
-python -m scraper.jsonl_converter
-# Raw lake validated, pushed to HDFS, and handed to the Spark pipeline
-```
+This reflects the actual code in the current repository and is the best starting point for running the project end-to-end.
 
 ---
 
-## 📄 Schema Contract Reference (`scraper/SCHEMA.md`)
+## Notes
 
-Downstream PySpark cleaning jobs consume raw JSON files directly from HDFS `/data/raw/*.json`. For full field definitions, nullable constraints, and PySpark `StructType` code snippets, refer to [`scraper/SCHEMA.md`](scraper/SCHEMA.md).
+- Raw files can be large and are not always committed to the repo.
+- HDFS and Spark setup depend on local environment configuration and Java/Hadoop availability.
+- The project is intentionally organized as a mini data platform, not a single app, so some commands must be run in different terminals or environment contexts.
+
+For environment-specific steps and deeper operational notes, see:
+
+- `docs/HDFS_SETUP.md`
+- `docs/SPARK_SETUP.md`
+- `README_PERSON2.md`
+- `DESIGN.md`

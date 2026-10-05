@@ -15,10 +15,16 @@ interface LogTerminalStreamProps {
 
 export const LogTerminalStream: React.FC<LogTerminalStreamProps> = ({ logs }) => {
   const [filter, setFilter] = useState<string>('ALL');
-  const terminalEndRef = useRef<HTMLDivElement>(null);
+  const scrollBoxRef = useRef<HTMLDivElement>(null);
 
+  // Keep the newest log lines visible WITHOUT scrolling the page.
+  // (scrollIntoView() scrolls every ancestor; because this panel refetches every
+  // 1.5s, the whole dashboard kept being dragged toward the terminal.)
   useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const box = scrollBoxRef.current;
+    if (box) {
+      box.scrollTop = box.scrollHeight;
+    }
   }, [logs]);
 
   const filteredLogs = logs.filter((log) => {
@@ -76,7 +82,7 @@ export const LogTerminalStream: React.FC<LogTerminalStreamProps> = ({ logs }) =>
         </div>
       </div>
 
-      <div className="p-3 overflow-y-auto max-h-[220px] min-h-[160px] custom-scrollbar space-y-1 font-mono">
+      <div ref={scrollBoxRef} className="p-3 overflow-y-auto max-h-[220px] min-h-[160px] custom-scrollbar space-y-1 font-mono">
         {filteredLogs.length === 0 ? (
           <div className="text-outline italic text-center py-4">
             No log entries match &ldquo;{filter}&rdquo;
@@ -92,7 +98,6 @@ export const LogTerminalStream: React.FC<LogTerminalStreamProps> = ({ logs }) =>
             </div>
           ))
         )}
-        <div ref={terminalEndRef} />
       </div>
     </div>
   );

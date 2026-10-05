@@ -25,8 +25,16 @@ GENERATED_PATH = (
     "run=2026_09_28T150245Z/*.jsonl"
 )
 
-OUTPUT_PATH = str(
-    BASE_DIR / "data" / "processed" / "clean_listings.parquet"
+# Cluster batch mode: RR_DATA_ROOT (e.g. hdfs://namenode:9000/data) redirects the
+# Stage-1 output into the HDFS processed zone instead of the local checkout.
+_DATA_ROOT = os.environ.get("RR_DATA_ROOT")
+
+OUTPUT_PATH = (
+    f"{_DATA_ROOT}/processed/clean_listings.parquet"
+    if _DATA_ROOT
+    else str(
+        BASE_DIR / "data" / "processed" / "clean_listings.parquet"
+    )
 )
 
 print("Reading Mercari:")
@@ -38,7 +46,7 @@ print(GENERATED_PATH)
 spark = (
     SparkSession.builder
     .appName("ResellRadar-CleanNormalize")
-    .master("local[*]")
+    .master(os.environ.get("SPARK_MASTER", "local[*]"))
     .config(
         "spark.hadoop.io.native.lib.available",
         "false"

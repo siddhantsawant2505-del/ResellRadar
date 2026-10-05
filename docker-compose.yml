@@ -10,6 +10,14 @@
 # Raw-zone data is uploaded via WebHDFS from the host (scripts/push_to_hdfs.py);
 # persistence lives in named volumes hdfs_namenode / hdfs_datanode.
 #
+# Distributed batch processing (Spark Standalone cluster, opt-in via the "cluster"
+# profile so the default stack stays storage-only):
+#   docker compose -f docker-compose.yml --profile cluster up -d --scale spark-worker=3
+#   then submit jobs with:  CLUSTER=1 scripts/run_stage_in_docker.sh <spark_jobs/xxx.py>
+#   spark-master : distributes tasks (RPC 7077, Web UI 8080)
+#   spark-worker : one JVM executor host per replica (scaled with --scale); the repo
+#                  is bind-mounted read-only at /work so executors can import job modules
+#
 # Usage (from the project root):
 #   docker compose -f docker-compose.yml up -d
 #   # wait for a healthy DataNode, then:
@@ -63,6 +71,38 @@ services:
     depends_on:
       namenode:
         condition: service_healthy
+
+  # ---- Spark Standalone batch cluster (profile "cluster") --------------------
+  # Same image as the execution harness (numpy included); sizing fits the Docker
+  # Desktop VM (16 CPU / ~7.6 GB RAM shared with the two Hadoop JVMs):
+  #   3 workers x 3 cores, 1 GB executor heap each, 512 MB master, 1.5 GB driver.
+  spark-master:
+    image: resellradar/spark:4.2.0-numpy
+    build: ./docker/spark
+    container_name: resellradar-spark-master
+    hostname: spark-master
+    user: root
+    command: ["/bin/bash", "-c", "SPARK_NO_DAEMONIZE=1 /opt/spark/sbin/start-master.sh -h spark-master"]
+    environment:
+      SPARK_DAEMON_MEMORY: 512m
+    ports:
+      - "8080:8080"   # Spark Master Web UI (shows workers + running applications)
+    profiles: ["cluster"]
+
+  spark-worker:
+    image: resellradar/spark:4.2.0-numpy
+    build: ./docker/spark
+    user: root
+    command: ["/bin/bash", "-c", "SPARK_NO_DAEMONIZE=1 /opt/spark/sbin/start-worker.sh spark://spark-master:7077"]
+    environment:
+      SPARK_WORKER_CORES: "3"
+      SPARK_WORKER_MEMORY: 3g
+      SPARK_DAEMON_MEMORY: 256m
+    volumes:
+      - ./:/work:ro   # executors import the job modules shipped by the driver
+    depends_on:
+      - spark-master
+    profiles: ["cluster"]
 
 volumes:
   hdfs_namenode:

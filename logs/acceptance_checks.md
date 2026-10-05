@@ -18,7 +18,7 @@
 - [PASS] temporary ER helper columns dropped before writing -- []
 - [PASS] row count unchanged from stage 1 (ER must not drop listings) -- 1,972,679 rows (expected 1,972,679)
 - [PASS] no duplicate listing_id -- 0 duplicates
-- [PASS] every listing received an entity_id (title -> entity mapping is total) -- 1,065,540 distinct entities, 0 nulls
+- [PASS] every listing received an entity_id (title -> entity mapping is total) -- 1,040,681 distinct entities, 0 nulls
 - [PASS] predicted_is_repost is a 0/1 flag -- values=[0, 1]
 - [PASS] flagged reposts all carry a link to an earlier original -- 49,788 of 49,788 flagged rows linked
 - [PASS] a repost never links to itself -- 0 self-links
@@ -26,10 +26,10 @@
 
 ## stage3
 
-- [PASS] depreciation_curve_curated.parquet written and non-empty -- 1,087,764 rows
+- [PASS] depreciation_curve_curated.parquet written and non-empty -- 1,062,905 rows
 - [PASS] depreciation_curve_curated.parquet has no entirely-null column -- []
 - [PASS] resale_velocity_curated.parquet written and non-empty -- 1,105 rows
 - [PASS] resale_velocity_curated.parquet has no entirely-null column -- []
-- [PASS] regional_price_variance_curated.parquet written and non-empty -- 1,080,928 rows
+- [PASS] regional_price_variance_curated.parquet written and non-empty -- 1,056,069 rows
 - [PASS] regional_price_variance_curated.parquet has no entirely-null column -- []
 

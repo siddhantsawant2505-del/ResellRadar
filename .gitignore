@@ -1,19 +1,30 @@
-# Python Virtual Environments
+# ==============================================================================
+# Python Virtual Environments & Packages
+# ==============================================================================
 venv/
 .venv/
 env/
 ENV/
+*.egg-info/
+dist/
+build/
 
-# Python Cache & Bytecode
+# ==============================================================================
+# Python Cache, Bytecode & Testing
+# ==============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 *.log
 
-# Data Lake Zones (Mercari TSV + generated JSONL; GB-scale, never commit)
+# ==============================================================================
+# Data Lake Zones (Mercari TSV + generated JSONL; GB-scale, never commit raw data)
+# ==============================================================================
 data/raw/**
 !data/raw/mercari/.gitkeep
 !data/raw/generated/.gitkeep
@@ -27,30 +38,73 @@ data/processed/*
 !data/processed/.gitkeep
 data/curated/*
 !data/curated/.gitkeep
-data/hdfs_sync_manifest.json
+data/*manifest*.json
 
-# Ground truth (evaluation key for entity resolution; outside the raw zone by design)
+# Ground truth (evaluation key for entity resolution; outside raw zone by design)
 data/ground_truth/**
 !data/ground_truth/.gitkeep
 data/ground_truth_smoke/**
 
+# ==============================================================================
+# Apache Spark & Hadoop
+# ==============================================================================
+spark-warehouse/
+derby.log
+metastore_db/
+*.spark-checkpoint/
+__spark_checkpoint__/
+# Windows winutils helpers, if a dev drops them at the repo root
+# (jobs point HADOOP_HOME here). Anchored so docker/hadoop stays tracked.
+/hadoop/
+
+# ==============================================================================
+# Runtime & Diagnostics Execution Logs
+# ==============================================================================
+logs/server_console.txt
+logs/cluster_*.txt
+logs/local_regression_*.txt
+logs/*_launch.txt
+logs/*_restore.txt
+*.tmp
+*.bak
+
+# ==============================================================================
 # Next.js Node & Build Directories
+# ==============================================================================
 node_modules/
 dashboard/node_modules/
 dashboard/.next/
 dashboard/out/
 dashboard/build/
+dashboard/dist/
 dashboard/.vercel/
 dashboard/*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 
-# OS / Editor Files
+# ==============================================================================
+# Environment Variables & Secrets
+# ==============================================================================
+.env
+.env.*
+!.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ==============================================================================
+# OS & Editor Files
+# ==============================================================================
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# Windows winutils helpers, if a dev drops them at the repo root
-# (jobs point HADOOP_HOME here). Anchored so docker/hadoop stays tracked.
-/hadoop/
+*~

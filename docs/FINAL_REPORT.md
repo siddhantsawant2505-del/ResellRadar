@@ -79,11 +79,16 @@ curated zones are rebuildable artifacts, re-derived from raw at any time.
           host-side Spark additionally needs winutils on Windows
 ```
 
-All three Spark jobs run `.master("local[*]")` — parallel across all 16 host cores
-(Stage outputs carry 16–17 part-files, i.e. genuinely parallel partition writers). The
-Hadoop cluster provides storage, not execution: there is no YARN/worker layer, so this is
-multi-core parallelism on one machine, not a multi-node execution cluster — the documented
-scale trade-off for ~2M rows.
+Execution has two modes with identical job files and identical results (distributed run
+verified to the exact row count, 2026-10-05):
+
+- **Single-unit (default)** — `.master("local[*]")`, parallel across all 16 host cores in
+  one JVM (stage outputs carry 16–17 part-files, i.e. genuinely parallel writers).
+- **Distributed batch** — Spark Standalone cluster via the compose `cluster` profile:
+  master + 3 worker units, 3 executor JVMs x 3 cores, reading/writing the HDFS zones.
+  Run: `CLUSTER=1 scripts/run_stage_in_docker.sh <job>` (docs/CLUSTER_BATCH_MODE.md).
+  The full pipeline ran distributed on 2026-10-05 with every canonical count reproduced
+  (evidence: `logs/cluster_batch_run.txt`).
 
 ---
 
@@ -185,8 +190,10 @@ also proves blocks are healthy. Cluster survives full restarts with data intact
    drop contract. Lifting it is a team contract decision, not a bug.
 2. **Generated-only analytics fields** — depreciation/region charts are meaningful only on
    the generated subset; dashboards must filter per source.
-3. **Single-node execution** — real multi-core parallelism (`local[*]`, 16–17 partition
-   writers) but no YARN/worker layer; HDFS is storage-only (1 DataNode, replication 1).
+3. **Cluster is one physical host** — the distributed batch mode runs real Spark
+   Standalone executor units (3 workers x 3 cores) over HDFS, but every unit is a Docker
+   container on one machine with 1 DataNode (replication 1); no physical multi-node
+   locality, and single-unit `local[*]` remains the default mode.
 4. **F3** — the entity-id `row_number()` window flows ~1.1M keys through one partition;
    deterministic, seconds of cost, documented in the job header; revisit at ~100x scale.
 5. **Semantic guard** — the learned vocabulary's one hand-written piece: 11 product-line
@@ -224,6 +231,12 @@ also proves blocks are healthy. Cluster survives full restarts with data intact
 - `logs/hdfs_zone_ingestion.txt` / `logs/hdfs_zone_readback.txt` — processed/curated push + Spark read-back
 - `logs/ingestion.log` — raw push manifest log; `logs/checksums.txt` — SHA-256 per raw file
 
+**Distributed batch execution (2026-10-05)**
+- `logs/cluster_batch_run.txt` — one-page evidence: 3 workers x 3 cores registered, 4 applications on the standalone master, HDFS zone sizes, replication note
+- `logs/cluster_stage1.txt` / `logs/cluster_stage2.txt` / `logs/cluster_stage3.txt` / `logs/cluster_verify.txt` — per-stage driver logs (3 executors each, canonical counts, exit 0)
+- `logs/local_regression_stage3.txt` — default single-unit mode still passes after the change
+- `docs/CLUSTER_BATCH_MODE.md` — how to run, size and verify the cluster
+
 **Documentation**
 - `docs/SCHEMA_mercari.md`, `docs/SCHEMA_generated.md`, `docs/SCHEMA_MISMATCHES.md` — contracts
 - `docs/HDFS_SETUP.md` — cluster setup, healthcheck fix, three-zone push/read-back workflow
@@ -236,7 +249,8 @@ also proves blocks are healthy. Cluster survives full restarts with data intact
 - `scripts/learn_chatter_vocab.py` — corpus vocabulary learner
 - `scripts/push_to_hdfs.py` / `scripts/push_zones_to_hdfs.py` — raw / zone pushes (fail loudly, no emulation)
 - `scripts/verify_hdfs_zones.py` — Spark read-back proof
-- `scripts/run_stage_in_docker.sh` + `docker/spark/Dockerfile` — execution harness
+- `scripts/run_stage_in_docker.sh` + `docker/spark/Dockerfile` — execution harness (single-unit and `CLUSTER=1` distributed modes)
+- `server.py` — pipeline orchestration API (:8000) behind the Next.js dashboard; "Start pipeline" auto-detects the standalone cluster and submits Spark stages as driver containers (`resellradar-spark-console-*`), syncs HDFS outputs back before acceptance, and exposes `GET /api/cluster` (workers/running/finished apps); see `docs/CLUSTER_BATCH_MODE.md`
 - `scripts/entity_resolution_lsh_bounded.py` — preserved as-delivered copy (bounded demo) for diffing
 - `scripts/qa_generated.py` — 27/27 generator QA incl. truth-file integrity
 

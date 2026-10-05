@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pyspark.sql import SparkSession
@@ -24,14 +25,30 @@ from pyspark.sql.window import Window
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-INPUT_PATH = str(
-    BASE_DIR
-    / "data"
-    / "processed"
-    / "entity_resolved.parquet"
+# Cluster batch mode: RR_DATA_ROOT (e.g. hdfs://namenode:9000/data) points input and
+# outputs at the HDFS zones so the executors on the worker containers read/write the
+# cluster storage. Default stays the local checkout (single-unit execution).
+_DATA_ROOT = os.environ.get("RR_DATA_ROOT")
+
+INPUT_PATH = (
+    f"{_DATA_ROOT}/processed/entity_resolved.parquet"
+    if _DATA_ROOT
+    else str(
+        BASE_DIR
+        / "data"
+        / "processed"
+        / "entity_resolved.parquet"
+    )
 )
 
 OUTPUT_DIR = BASE_DIR / "data" / "curated"
+
+
+def curated_path(name):
+    """Output path for a curated table (HDFS curated zone in cluster batch mode)."""
+    if _DATA_ROOT:
+        return f"{_DATA_ROOT}/curated/{name}"
+    return str(OUTPUT_DIR / name)
 
 
 # ============================================================
@@ -41,7 +58,7 @@ OUTPUT_DIR = BASE_DIR / "data" / "curated"
 spark = (
     SparkSession.builder
     .appName("ResellRadar-FeatureEngineering")
-    .master("local[*]")
+    .master(os.environ.get("SPARK_MASTER", "local[*]"))
     .config(
         "spark.hadoop.io.native.lib.available",
         "false"
@@ -340,19 +357,19 @@ regional.show(
 print("\n========== SAVING CURATED DATA ==========")
 
 
-OUTPUT_DIR.mkdir(
-    parents=True,
-    exist_ok=True
-)
+if not _DATA_ROOT:
+    OUTPUT_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
 
 # Depreciation curve
 depreciation_curve.write.mode(
     "overwrite"
 ).parquet(
-    str(
-        OUTPUT_DIR
-        / "depreciation_curve_curated.parquet"
+    curated_path(
+        "depreciation_curve_curated.parquet"
     )
 )
 
@@ -361,9 +378,8 @@ depreciation_curve.write.mode(
 velocity.write.mode(
     "overwrite"
 ).parquet(
-    str(
-        OUTPUT_DIR
-        / "resale_velocity_curated.parquet"
+    curated_path(
+        "resale_velocity_curated.parquet"
     )
 )
 
@@ -372,9 +388,8 @@ velocity.write.mode(
 regional.write.mode(
     "overwrite"
 ).parquet(
-    str(
-        OUTPUT_DIR
-        / "regional_price_variance_curated.parquet"
+    curated_path(
+        "regional_price_variance_curated.parquet"
     )
 )
 
@@ -383,15 +398,19 @@ regional.write.mode(
 # SUCCESS
 # ============================================================
 
-print("\nSUCCESS!")
+
+print(
+    "\nSUCCESS!"
+)
 
 print(
     "Depreciation curve saved to:"
 )
 
 print(
-    OUTPUT_DIR
-    / "depreciation_curve_curated.parquet"
+    curated_path(
+        "depreciation_curve_curated.parquet"
+    )
 )
 
 print(
@@ -399,8 +418,9 @@ print(
 )
 
 print(
-    OUTPUT_DIR
-    / "resale_velocity_curated.parquet"
+    curated_path(
+        "resale_velocity_curated.parquet"
+    )
 )
 
 print(
@@ -408,8 +428,9 @@ print(
 )
 
 print(
-    OUTPUT_DIR
-    / "regional_price_variance_curated.parquet"
+    curated_path(
+        "regional_price_variance_curated.parquet"
+    )
 )
 
 

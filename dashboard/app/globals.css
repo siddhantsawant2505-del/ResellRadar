@@ -19,6 +19,17 @@
     linear-gradient(to bottom, rgba(92, 84, 80, 0.12) 1px, transparent 1px);
 }
 
+/* Analytics chart palette (consumed by components/SimpleCharts.tsx) */
+:root {
+  --chart-primary: #e8a733;
+  --chart-secondary: #5cb87a;
+  --chart-tertiary: #9b8ff0;
+  --chart-outline: #a09890;
+  --chart-grid: rgba(92, 84, 80, 0.35);
+  --chart-zero: rgba(217, 83, 79, 0.7);
+  --chart-text: #a09890;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
   height: 4px;

@@ -139,7 +139,7 @@ export const RawDataGrid: React.FC<RawDataGridProps> = ({
                     <div className="text-[10px] text-tertiary">{item.sub_category}</div>
                   </td>
                   <td className="py-2 px-3 text-right font-mono font-semibold text-primary text-sm">
-                    ${item.price.toFixed(2)}
+                    {typeof item.price === 'number' ? `$${item.price.toFixed(2)}` : '—'}
                   </td>
                   <td className="py-2 px-3 text-outline text-[11px]">
                     {item.location_city}, {item.location_region}

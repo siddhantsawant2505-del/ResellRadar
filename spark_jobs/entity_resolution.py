@@ -62,6 +62,7 @@ v3 learned-vocabulary 0.9802), logs/er_report_stage2_v3.md.
 """
 
 import json
+import os
 from pathlib import Path
 
 from pyspark.sql import SparkSession
@@ -94,12 +95,25 @@ from pyspark.sql.window import Window
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-INPUT_PATH = str(
-    BASE_DIR / "data" / "processed" / "clean_listings.parquet"
+# Cluster batch mode: RR_DATA_ROOT (e.g. hdfs://namenode:9000/data) points input and
+# output at the HDFS zones so the executors on the worker containers read/write the
+# cluster storage. Default stays the local checkout (single-unit execution).
+_DATA_ROOT = os.environ.get("RR_DATA_ROOT")
+
+INPUT_PATH = (
+    f"{_DATA_ROOT}/processed/clean_listings.parquet"
+    if _DATA_ROOT
+    else str(
+        BASE_DIR / "data" / "processed" / "clean_listings.parquet"
+    )
 )
 
-OUTPUT_PATH = str(
-    BASE_DIR / "data" / "processed" / "entity_resolved.parquet"
+OUTPUT_PATH = (
+    f"{_DATA_ROOT}/processed/entity_resolved.parquet"
+    if _DATA_ROOT
+    else str(
+        BASE_DIR / "data" / "processed" / "entity_resolved.parquet"
+    )
 )
 
 VOCAB_PATH = BASE_DIR / "data" / "processed" / "chatter_vocab.json"
@@ -139,7 +153,7 @@ print(f"  source: {VOCAB_PATH.name} (created {_vocab_payload.get('created_utc', 
 spark = (
     SparkSession.builder
     .appName("ResellRadar-EntityResolution")
-    .master("local[*]")
+    .master(os.environ.get("SPARK_MASTER", "local[*]"))
     .config(
         "spark.hadoop.io.native.lib.available",
         "false"

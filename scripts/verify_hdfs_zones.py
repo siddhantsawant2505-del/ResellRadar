@@ -11,6 +11,7 @@ Usage:
     bash scripts/run_stage_in_docker.sh scripts/verify_hdfs_zones.py
 """
 
+import os
 import sys
 
 from pyspark.sql import SparkSession
@@ -26,7 +27,7 @@ ZONES = [
 spark = (
     SparkSession.builder
     .appName("ResellRadar-VerifyHdfszones")
-    .master("local[*]")
+    .master(os.environ.get("SPARK_MASTER", "local[*]"))
     .getOrCreate()
 )
 spark.sparkContext.setLogLevel("ERROR")
