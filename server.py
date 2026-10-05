@@ -18,7 +18,7 @@ import time
 import urllib.request
 from typing import Dict, List, Optional, Any
 
-from fastapi import FastAPI, BackgroundTasks, Query
+from fastapi import FastAPI, BackgroundTasks, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -205,10 +205,14 @@ class ScrapeTriggerRequest(BaseModel):
     category: str = "all"
     batch_target: int = 1000
     concurrency_threads: int = 16
+    skip_generation: bool = False  # rebuild-from-raw-zone mode (no new synthetic batches)
 
 
-def run_pipeline_sequence(category: str, target: int, threads: int):
-    """Executes the full data engineering pipeline sequentially in a background thread."""
+def run_pipeline_sequence(category: str, target: int, threads: int, skip_generation: bool = False):
+    """Executes the full data engineering pipeline sequentially in a background thread.
+    skip_generation=True reruns validation/HDFS/Spark/acceptance only - used after a
+    manual upload so the uploaded data merges into the processed tables without
+    generating new synthetic batches."""
     global _current_process
     _stop_requested.clear()
 
@@ -302,6 +306,10 @@ def run_pipeline_sequence(category: str, target: int, threads: int):
     ]
 
     total_stages = len(stages)
+    if skip_generation:
+        stages = [s for s in stages if "Generation" not in s["name"]]
+        total_stages = len(stages)
+        add_log("INFO", "Upload-merge run: synthetic generation skipped - ingesting the uploaded batch into the pipeline")
     for idx, stage in enumerate(stages, start=1):
         if _stop_requested.is_set():
             add_log("WARN", "Pipeline run aborted by operator.")
@@ -487,7 +495,7 @@ def trigger_scrape(req: ScrapeTriggerRequest, background_tasks: BackgroundTasks)
             return {"status": "ERROR", "message": "Pipeline execution is already active."}
 
     background_tasks.add_task(
-        run_pipeline_sequence, req.category, req.batch_target, req.concurrency_threads
+        run_pipeline_sequence, req.category, req.batch_target, req.concurrency_threads, req.skip_generation
     )
     return {
         "status": "ACCEPTED",
@@ -939,6 +947,114 @@ def get_analytics():
         _ANALYTICS_CACHE["payload"] = data
         _ANALYTICS_CACHE["computed_at"] = time.time()
     return {**data, "cached": False}
+
+
+# ---- Manual ingestion (upload -> raw zone -> next pipeline run) -------------
+UPLOADS_DIR = os.path.join("data", "raw", "uploads")
+
+
+def _list_upload_runs() -> List[Dict[str, Any]]:
+    runs = []
+    uploads_root = os.path.join(PROJECT_ROOT, UPLOADS_DIR)
+    if not os.path.isdir(uploads_root):
+        return runs
+    for name in sorted(os.listdir(uploads_root), reverse=True):
+        run_dir = os.path.join(uploads_root, name)
+        if not name.startswith("run=") or not os.path.isdir(run_dir):
+            recent = False
+        else:
+            mt = max(
+                (os.path.getmtime(os.path.join(run_dir, f)) for f in os.listdir(run_dir)),
+                default=0.0,
+            )
+            recent = (time.time() - mt) < 86400
+        if not recent:
+            continue
+        summary = {}
+        summary_path = os.path.join(run_dir, "ingest_summary.json")
+        if os.path.exists(summary_path):
+            try:
+                with open(summary_path, encoding="utf-8") as fh:
+                    summary = json.load(fh)
+            except Exception:
+                summary = {}
+        runs.append({
+            "run": name,
+            "raw_path": summary.get("raw_path", f"{UPLOADS_DIR}/{name}"),
+            "accepted": summary.get("accepted"),
+            "rejected": summary.get("rejected"),
+            "duplicates_of_existing": summary.get("duplicates_of_existing"),
+            "source_file": summary.get("source_file"),
+            "stored_at": summary.get("stored_at"),
+        })
+    return runs
+
+
+@app.post("/api/ingest/upload")
+async def upload_ingest_file(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    source_name: str = Form(None),
+    rerun: str = Form("false"),
+):
+    """Manual ingestion: normalize + validate an uploaded CSV/TSV/JSON/JSONL into the
+    raw zone (data/raw/uploads/run=<ts>/), then optionally rerun the pipeline
+    (no synthetic generation) so the batch merges into the processed tables."""
+    with _state_lock:
+        busy = PIPELINE_STATE["is_running"]
+    if busy:
+        return {"status": "ERROR", "message": "Pipeline already running - try again when it finishes."}
+    if rerun.lower() in ("true", "1", "yes") and not spark_standalone_up():
+        return {"status": "ERROR", "message": "Spark cluster is down - cannot merge. Start the cluster profile first."}
+
+    suffix = os.path.splitext(file.filename or "upload.csv")[1].lower()
+    if suffix not in (".csv", ".tsv", ".json", ".jsonl"):
+        return {"status": "ERROR", "message": "Unsupported format - upload CSV, TSV, JSON, or JSONL."}
+    tmp_path = os.path.join(PROJECT_ROOT, "data", "raw", f".upload_{int(time.time())}{suffix}")
+    size = 0
+    limit = 200 * 1024 * 1024
+    try:
+        with open(tmp_path, "wb") as out:
+            while chunk := await file.read(1 << 20):  # stream in 1 MiB chunks
+                size += len(chunk)
+                if size > limit:
+                    raise ValueError(f"file exceeds the {limit // (1024 * 1024)} MB upload limit")
+                out.write(chunk)
+        if size == 0:
+            raise ValueError("uploaded file is empty")
+        if os.path.join(PROJECT_ROOT, "scripts") not in sys.path:
+            sys.path.insert(0, os.path.join(PROJECT_ROOT, "scripts"))
+        import scripts.ingest_uploads as ingest_mod
+        summary = ingest_mod.ingest_file(tmp_path, source_name)
+        add_log(
+            "ACK",
+            f"[OK] Manual upload ingested: {summary['accepted']:,} accepted, {summary['rejected']:,} rejected, "
+            f"{summary['duplicates_of_existing']:,} duplicates -> {summary['raw_path']}",
+        )
+    except ValueError as exc:
+        return {"status": "ERROR", "message": str(exc)}
+    except Exception as exc:  # malformed input, pandas missing, ...
+        return {"status": "ERROR", "message": f"ingestion failed: {exc}"}
+    finally:
+        try:
+            os.remove(tmp_path)  # the normalized copy lives in data/raw/uploads/
+        except OSError:
+            pass
+
+    if rerun.lower() in ("true", "1", "yes"):
+        background_tasks.add_task(run_pipeline_sequence, "all", 0, 0, True)
+        return {
+            "status": "ACCEPTED",
+            "message": f"Ingested {summary['accepted']:,} rows; rerunning the pipeline to merge them",
+            "summary": summary,
+        }
+    return {"status": "SUCCESS", "message": f"Ingested {summary['accepted']:,} rows into the raw zone", "summary": summary}
+
+
+@app.get("/api/ingest/uploads")
+def list_uploads():
+    """Recent (24h) upload runs with their ingestion summaries."""
+    return {"uploads": _list_upload_runs()}
 
 
 @app.get("/api/logs")

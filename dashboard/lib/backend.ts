@@ -2,7 +2,7 @@
 // controller (server.py on 127.0.0.1:8000). Route handlers under app/api/*
 // forward every request (method, query string, JSON body) to the backend and
 // stream the response back, so the browser keeps calling same-origin /api/*.
-const BACKEND = process.env.PIPELINE_API_URL ?? "http://127.0.0.1:8000";
+export const BACKEND = process.env.PIPELINE_API_URL ?? "http://127.0.0.1:8000";
 
 export async function proxy(request: Request): Promise<Response> {
   const url = new URL(request.url);

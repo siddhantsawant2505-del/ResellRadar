@@ -19,7 +19,10 @@ Usage:
 """
 
 import argparse
+import glob
+import json
 import os
+import re
 import sys
 
 import pandas as pd
@@ -31,11 +34,79 @@ CURATED = os.path.join(PROJECT_ROOT, "data", "curated")
 # Raw-zone facts (logs/validation_report.md + a direct count of the generated JSONL):
 # mercari train.tsv 1,482,535 rows with no null title/price/listing_id;
 # generated 500,000 rows of which 9,856 carry a null `price` by design (~2% messiness).
+# Manual uploads (data/raw/uploads/) join the same union, so the expected counts are
+# DERIVED from the raw zone at runtime instead of hardcoded - uploading data shifts
+# the expectations instead of failing the acceptance gate.
 RAW_ROWS = 1_982_535
 MERCARI_ROWS = 1_482_535
 GENERATED_ROWS = 500_000
 GENERATED_NULL_PRICE = 9_856
 CLEAN_ROWS = RAW_ROWS - GENERATED_NULL_PRICE          # 1,972,679
+UPLOADS_ROWS = 0
+UPLOADS_NULL_PRICE = 0
+
+
+def _canonical_generated_run() -> str:
+    """Mirror the generated run partition that clean_normalize.py actually reads
+    (GENERATED_PATH there points at ONE canonical run; later console-trigger
+    runs are test batches that are not part of the union). Parsing the run id
+    out of the job file keeps acceptance and Spark in sync automatically."""
+    default = "run=2026_09_28T150245Z"
+    try:
+        with open(os.path.join(PROJECT_ROOT, "spark_jobs", "clean_normalize.py"), encoding="utf-8") as fh:
+            m = re.search(r"run=(\d{4}_\d{2}_\d{2}T\d{6}Z)", fh.read())
+        return f"run={m.group(1)}" if m else default
+    except OSError:
+        return default
+
+
+def derive_raw_expectations() -> dict:
+    """Count raw-zone rows per source (and null-price rows) so the expected
+    pipeline numbers always match whatever the raw zone actually contains,
+    including manually uploaded batches."""
+    raw = os.path.join(PROJECT_ROOT, "data", "raw")
+    exp = {
+        "mercari": 0,
+        "generated": 0,
+        "uploads": 0,
+        "generated_null_price": 0,
+        "uploads_null_price": 0,
+    }
+
+    for tsv in glob.glob(os.path.join(raw, "mercari", "*.tsv")):
+        with open(tsv, encoding="utf-8") as fh:
+            exp["mercari"] += sum(1 for _ in fh) - 1  # header
+
+    # generated: only the canonical partition the Spark stage reads
+    for jl in glob.glob(os.path.join(raw, "generated", _canonical_generated_run(), "*.jsonl")):
+        with open(jl, encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    exp["generated_null_price"] += 1
+                    continue
+                exp["generated"] += 1
+                if rec.get("price") is None:
+                    exp["generated_null_price"] += 1
+
+    # uploads: every uploaded batch joins the union (that is the feature)
+    for jl in glob.glob(os.path.join(raw, "uploads", "**", "*.jsonl"), recursive=True):
+        with open(jl, encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    exp["uploads_null_price"] += 1  # unreadable row can never survive stage 1
+                    continue
+                exp["uploads"] += 1
+                if rec.get("price") is None:
+                    exp["uploads_null_price"] += 1
+    return exp
 
 BASE_FIELDS = [
     "listing_id", "title", "description", "price", "price_raw", "currency",
@@ -88,7 +159,7 @@ def check_stage1():
     c = Checks("stage1")
 
     c.check(
-        "row count equals raw 1,982,535 minus the 9,856 designed null-price rows",
+        "row count equals the raw zone minus the designed null-price rows",
         len(df) == CLEAN_ROWS,
         f"{len(df):,} rows (expected {CLEAN_ROWS:,})",
     )
@@ -105,12 +176,15 @@ def check_stage1():
     )
 
     platforms = df["source_platform"].value_counts().to_dict()
+    uploads_seen = platforms.get("uploads", 0)
     c.check(
-        "both sources survived the union with the expected row counts",
+        "all sources survived the union with the expected row counts",
         platforms.get("mercari") == MERCARI_ROWS
-        and platforms.get("generated") == GENERATED_ROWS - GENERATED_NULL_PRICE,
+        and platforms.get("generated") == GENERATED_ROWS - GENERATED_NULL_PRICE
+        and uploads_seen == UPLOADS_ROWS - UPLOADS_NULL_PRICE,
         f"mercari={platforms.get('mercari', 0):,} (expected {MERCARI_ROWS:,}), "
-        f"generated={platforms.get('generated', 0):,} (expected {GENERATED_ROWS - GENERATED_NULL_PRICE:,})",
+        f"generated={platforms.get('generated', 0):,} (expected {GENERATED_ROWS - GENERATED_NULL_PRICE:,}), "
+        f"uploads={uploads_seen:,} (expected {UPLOADS_ROWS - UPLOADS_NULL_PRICE:,})",
     )
 
     mercari = df["source_platform"] == "mercari"
@@ -229,10 +303,28 @@ def check_stage3():
 
 
 def main():
+    global RAW_ROWS, MERCARI_ROWS, GENERATED_ROWS, GENERATED_NULL_PRICE, CLEAN_ROWS
+    global UPLOADS_ROWS, UPLOADS_NULL_PRICE
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=["stage1", "stage2", "stage3", "all"])
     ap.add_argument("--out", default=None, help="write a markdown evidence file here")
     args = ap.parse_args()
+
+    # Expected counts always mirror the current raw zone (incl. manual uploads).
+    exp = derive_raw_expectations()
+    MERCARI_ROWS = exp["mercari"]
+    GENERATED_ROWS = exp["generated"]
+    GENERATED_NULL_PRICE = exp["generated_null_price"]
+    UPLOADS_ROWS = exp["uploads"]
+    UPLOADS_NULL_PRICE = exp["uploads_null_price"]
+    RAW_ROWS = MERCARI_ROWS + GENERATED_ROWS + UPLOADS_ROWS
+    CLEAN_ROWS = RAW_ROWS - GENERATED_NULL_PRICE - UPLOADS_NULL_PRICE
+    print(
+        f"[expectations] mercari={MERCARI_ROWS:,} generated={GENERATED_ROWS:,} "
+        f"uploads={UPLOADS_ROWS:,} | null-price drops={GENERATED_NULL_PRICE + UPLOADS_NULL_PRICE:,} "
+        f"| expected clean={CLEAN_ROWS:,}",
+        flush=True,
+    )
 
     runners = {"stage1": check_stage1, "stage2": check_stage2, "stage3": check_stage3}
     chosen = list(runners) if args.stage == "all" else [args.stage]

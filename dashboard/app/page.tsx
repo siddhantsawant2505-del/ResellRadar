@@ -8,6 +8,7 @@ import { LogTerminalStream } from '../components/LogTerminalStream';
 import { RawDataGrid } from '../components/RawDataGrid';
 import { HDFSPanel } from '../components/HDFSPanel';
 import { ClusterPanel } from '../components/ClusterPanel';
+import { UploadPanel } from '../components/UploadPanel';
 
 export default function Home() {
   const [serverState, setServerState] = useState<any>(null);
@@ -170,6 +171,9 @@ export default function Home() {
 
         {/* Level 2.5: Distributed batch cluster (branched worker units) */}
         <ClusterPanel cluster={cluster} />
+
+        {/* Level 2.6: Manual ingestion (upload -> raw zone -> merge) */}
+        <UploadPanel isRunning={isRunning} clusterUp={cluster?.standalone_up ?? false} onLogRefresh={fetchLogs} />
 
         {/* Level 3: HDFS Sync Control */}
         <HDFSPanel hdfsData={serverState?.hdfs_telemetry || {}} onSync={handleSyncHDFS} />

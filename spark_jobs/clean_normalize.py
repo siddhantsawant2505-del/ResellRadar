@@ -24,6 +24,9 @@ GENERATED_PATH = (
     "hdfs://namenode:9000/data/raw/generated/"
     "run=2026_09_28T150245Z/*.jsonl"
 )
+# Manual uploads (data/raw/uploads/run=<ts>/*.jsonl on HDFS); the zone is
+# optional, so an empty/absent uploads dir must not fail the stage.
+UPLOADS_PATH = "hdfs://namenode:9000/data/raw/uploads/*/*.jsonl"
 
 # Cluster batch mode: RR_DATA_ROOT (e.g. hdfs://namenode:9000/data) redirects the
 # Stage-1 output into the HDFS processed zone instead of the local checkout.
@@ -42,6 +45,9 @@ print(MERCARI_PATH)
 
 print("\nReading Generated:")
 print(GENERATED_PATH)
+
+print("\nReading Manual Uploads (optional zone):")
+print(UPLOADS_PATH)
 
 spark = (
     SparkSession.builder
@@ -211,10 +217,66 @@ generated_df = (
 
 
 # ============================================================
+# MANUAL UPLOADS (optional zone; merged into the same union schema)
+# ============================================================
+
+def _uploads_zone_exists() -> bool:
+    """Probe the glob with the Hadoop FS API (no eager read). Spark 4 validates
+    the path inside spark.read.json itself, so an absent optional zone must be
+    detected BEFORE building the DataFrame."""
+    try:
+        jvm = spark._jvm
+        gp = jvm.org.apache.hadoop.fs.Path(UPLOADS_PATH)
+        fs = gp.getFileSystem(spark._jsc.hadoopConfiguration())
+        return bool(fs.globStatus(gp))
+    except Exception:
+        return False
+
+
+uploads_df = None
+uploads_count = 0
+if _uploads_zone_exists():
+    uploads_df = (
+        spark.read
+        .json(UPLOADS_PATH)
+        .select(
+            col("listing_id").cast("string"),
+            col("title"),
+            col("description"),
+            col("price").cast("double"),
+            col("price_raw"),
+            col("currency"),
+            col("category"),
+            col("sub_category"),
+            col("category_full"),
+            col("item_condition_id").cast("int"),
+            col("brand_name"),
+            col("shipping").cast("int"),
+            to_timestamp("posted_date").alias("posted_date"),
+            to_timestamp("delisted_date").alias("delisted_date"),
+            col("location_city"),
+            col("location_region"),
+            col("seller_type"),
+            col("seller_id"),
+            col("source_platform")
+        )
+    )
+    try:
+        uploads_count = uploads_df.count()
+    except Exception:
+        uploads_df = None
+        uploads_count = 0
+
+print("Manual Upload Records:", uploads_count)
+
+
+# ============================================================
 # UNION
 # ============================================================
 
 df = mercari_df.unionByName(generated_df)
+if uploads_count:
+    df = df.unionByName(uploads_df)
 
 print("\n========== RAW DATA ==========")
 print("Total Records:", df.count())

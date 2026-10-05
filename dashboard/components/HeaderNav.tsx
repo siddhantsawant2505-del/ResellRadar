@@ -40,6 +40,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({ state, onRefresh }) => {
             { href: '#metrics', label: 'Metrics' },
             { href: '#controller', label: 'Controller' },
             { href: '#cluster', label: 'Cluster' },
+            { href: '#upload', label: 'Upload' },
             { href: '#hdfs', label: 'HDFS sync' },
             { href: '#stream', label: 'Raw stream' },
           ].map((item) => (

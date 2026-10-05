@@ -44,6 +44,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCES = [
     (os.path.join(PROJECT_ROOT, "data", "raw", "mercari"), "/data/raw/mercari"),
     (os.path.join(PROJECT_ROOT, "data", "raw", "generated"), "/data/raw/generated"),
+    # manual uploads (optional zone): data/raw/uploads/run=<ts>/*.jsonl
+    (os.path.join(PROJECT_ROOT, "data", "raw", "uploads"), "/data/raw/uploads"),
 ]
 LOG_PATH = os.path.join(PROJECT_ROOT, "logs", "ingestion.log")
 MANIFEST_PATH = os.path.join(PROJECT_ROOT, "data", "hdfs_sync_manifest.json")
@@ -207,6 +209,8 @@ def main() -> None:
             if not f.startswith(".")
         )
         if not files:
+            if os.path.basename(local_dir) == "uploads":
+                continue  # the uploads zone is optional - an empty one is fine
             print(f"[ERROR] {os.path.relpath(local_dir, PROJECT_ROOT)} exists but is empty - "
                   f"raw zone must not be empty; refusing to continue")
             failures += 1
