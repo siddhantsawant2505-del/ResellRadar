@@ -76,6 +76,10 @@ the WSL2 50%-of-RAM default).
   (`logs/cluster_verify.txt`); `hdfs fsck /data` → HEALTHY.
 - Single-unit regression: default harness run still executes `local[*]` with local
   outputs, exit 0 (`logs/local_regression_stage3.txt`).
+- Manual-upload merge exercised in the same period: Stage 4 printed
+  `Manual Upload Records: 3` for a 3-row test batch and acceptance reported
+  `uploads=3 (expected 3)`; after the test batch was purged, the committed canonical
+  restore run is `logs/acceptance_checks.md` (`uploads=0 (expected 0)`, 24/24 PASS).
 
 ## Triggering it from the dashboard ("Start pipeline")
 
@@ -96,6 +100,14 @@ automatically uses the multiple worker units whenever the cluster profile is up:
   `os.replace`), so acceptance always grades the outputs the distributed run just wrote.
 - **Stop** terminates the driver containers too (`resellradar-spark-console-*`), not just the
   local subprocess.
+- **Rebuild-from-raw-zone runs**: the trigger also accepts `skip_generation: true`, which is
+  what the manual-upload merge (`Ingest & merge` in the upload panel, or
+  `rerun=true` on `POST /api/ingest/upload`) uses. Stage 1 (synthetic generation) is
+  dropped; Stage 3 pushes the whole raw zone including `data/raw/uploads/`; Stages 4-6
+  recompute processed/curated from the union; acceptance derives its expected counts from
+  the raw zone at runtime, so an uploaded batch shifts the expectations
+  (`uploads=N (expected N)`) instead of failing the gate. This is a deterministic full
+  recompute, not an incremental append. See `docs/SCHEMA_uploads.md`.
 
 ### Batch cluster panel (`/api/cluster` -> ClusterPanel on the dashboard)
 

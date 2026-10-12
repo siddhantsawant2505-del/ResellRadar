@@ -1,16 +1,18 @@
 # ResellRadar — Final Project Report
 
 **Project**: ResellRadar — resale-market data lake + Spark pipeline
-**Report date**: 2026-09-29  |  **Generator run**: `run=2026_09_28T150245Z` (seed 42)
-**Repo**: `main` @ `68d15f8` (synced with origin)
-**Status**: pipeline complete, accepted end-to-end, all evidence committed
+**Report date**: 2026-10-12 (first issued 2026-09-29; pipeline evidence as of the 2026-10-05 canonical run)  |  **Generator run**: `run=2026_09_28T150245Z` (seed 42)
+**Repo**: `main` @ `a13abe7` (upload-ingestion feature committed; `git log --oneline`)
+**Status**: pipeline complete, accepted end-to-end (24/24), manual upload ingestion integrated,
+dashboard + analytics live, distributed cluster batch verified
 
 ---
 
 ## 1. Executive summary
 
 ResellRadar ingests ~2M resale marketplace listings (1.48M real Mercari rows + 500k
-generated rows that supply the fields real data lacks), lands them in an immutable raw
+generated rows that supply the fields real data lacks, plus any operator-supplied upload
+batches), lands them in an immutable raw
 zone on a real single-node HDFS cluster, and processes them through a three-stage Spark
 pipeline into curated analytics tables:
 
@@ -29,7 +31,14 @@ F1 **0.9802** and generalizes to real marketplace titles (492 learned Mercari ch
 tokens; 24,859 additional real titles merged).
 
 The full lake (raw → processed → curated) lives on HDFS and every zone was read back and
-verified through Spark (`logs/hdfs_zone_readback.txt`).
+verified through Spark (`logs/hdfs_zone_readback.txt`; the restore run's read-back is
+`logs/hdfs_zone_readback_restore.txt`).
+
+Since 2026-10-05 the lake also accepts **manual uploads**: the console's *Manual ingestion*
+panel (or `scripts/ingest_uploads.py`) normalizes an operator's CSV/TSV/JSON/JSONL into a
+third raw zone (`data/raw/uploads/run=<ts>/`, `source_platform="uploads"`), and a
+"merge" rerun of the pipeline unions that batch into the same processed/curated tables.
+The upload contract is `docs/SCHEMA_uploads.md`; the mechanics are in section 4 (upload feature).
 
 ---
 
@@ -62,6 +71,10 @@ verified through Spark (`logs/hdfs_zone_readback.txt`).
 Data flows strictly left to right. The raw zone is **immutable** (fixes = new `run=`
 partition, never edits; SHA-256 pinned in `logs/checksums.txt`). The processed and
 curated zones are rebuildable artifacts, re-derived from raw at any time.
+
+A third, optional source lands in the same raw zone: **manual uploads**
+(`data/raw/uploads/run=<ts>/`, `source_platform="uploads"`) union into Stage 1 on the next
+run — mechanics in section 4, contract in `docs/SCHEMA_uploads.md`.
 
 ### Execution topology
 
@@ -98,7 +111,8 @@ verified to the exact row count, 2026-10-05):
 |---|---|
 | Mercari source | `docs/SCHEMA_mercari.md` — no dates/location/seller by nature; brand nulls ~43% published baseline |
 | Generated source | `docs/SCHEMA_generated.md` — canonical product = brand x model x storage x colour; titles are 6–15 surface variants; documented messiness (condition words, extras, repost suffixes); 1,108 canonical products; 50k designed reposts (10%) |
-| Cross-source | `docs/SCHEMA_MISMATCHES.md` — dates/location/seller_id are **generated-only**; all downstream consumers must segment per source |
+| Cross-source | `docs/SCHEMA_MISMATCHES.md` — the three-source union contract; dates/location/seller_id are **generated-only** by design (uploads carry them only when the file does); all downstream consumers must segment per source |
+| Manual uploads | `docs/SCHEMA_uploads.md` — CSV/TSV/JSON/JSONL ≤ 200 MB, `title` + `price` required, dedup against the whole raw zone on ingest, `source_platform="uploads"` |
 | Ground truth | `data/ground_truth/run=2026_09_28T150245Z/truth.parquet` — 500k rows, 1:1 via `listing_id`; used **only** by the grader for reporting, never as a pipeline input or feature |
 
 ---
@@ -113,6 +127,10 @@ verified to the exact row count, 2026-10-05):
 - Mercari 1,482,535 / generated 490,144, exact; brand nulls 42.68% (~43% documented);
   `category_full` nulls 6,327 = 0.43% (~0.4% documented), Mercari-only.
 - Mercari rows keep NULL dates/location/seller; generated rows keep theirs.
+- The production job also unions the optional `data/raw/uploads/` zone (its HDFS path is
+  probed with the Hadoop FS glob API before reading, so an empty/absent zone is safe). With
+  no uploads the counts above are unchanged; the stage-1 check reports
+  `uploads=0 (expected 0)`.
 
 ### Stage 2 — entity resolution + repost detection (accepted 9/9)
 
@@ -165,13 +183,43 @@ no prediction (a Stage 1 contract decision, not an ER error).
 | `resale_velocity_curated.parquet` | 1,105 | healthy — roughly one row per product with sales history |
 | `regional_price_variance_curated.parquet` | 1,056,069 | ~98.5% null region, ~88.1% null stddev — Mercari has no location |
 
+### Feature — manual upload ingestion & merge (added 2026-10-05)
+
+The raw zone accepts operator-supplied batches through `scripts/ingest_uploads.py`
+(`POST /api/ingest/upload`, behind the dashboard's **Manual ingestion** panel):
+
+- **Input**: CSV / TSV / JSON / JSONL, ≤ 200 MB, normalized to the 19-field union;
+  `title` + `price` are required, condition/shipping are coerced or NULL, unparseable
+  dates become NULL, and header aliases (`name`, `item_description`, `category_name`,
+  `brand`, `condition`, `merchant_rating`, …) are mapped to the canonical fields.
+- **No duplicates in the processed corpus**: a row whose `listing_id` already exists in the
+  Mercari/generated zones (or earlier in the same file) is skipped at ingest, and Stage 4
+  unions every upload partition and then `dropDuplicates(["listing_id"])`.
+- **Landing**: `data/raw/uploads/run=<ts>/<label>.jsonl` + `ingest_summary.json`; the
+  standard raw-zone push carries it to `hdfs://namenode:9000/data/raw/uploads/...`.
+- **Merge**: "Ingest & merge" reruns the pipeline with `skip_generation=true` (no new
+  synthetic batches). Stage 3 pushes the zone, Stage 4 unions it, HDFS outputs sync back,
+  and Stage 7 acceptance **derives its expected counts from the raw zone at runtime** — an
+  uploaded batch moves the expectations instead of failing the gate.
+- **Verified in both directions** during development: a 3-row test batch merged
+  (Stage 4 printed `Manual Upload Records: 3`; acceptance reported
+  `uploads=3 (expected 3)`), and after the test batch was purged a rebuild reproduced the
+  canonical corpus. The committed `logs/acceptance_checks.md` is that canonical state
+  (`uploads=0 (expected 0)`, 24/24 PASS).
+- Two real defects were found and fixed by this feature: Spark 4 validates glob paths
+  eagerly, so an empty optional zone threw `PATH_NOT_FOUND` before the guarded read (now
+  probed with the Hadoop FS API first), and the acceptance derivation had a leftover
+  variable in the uploads loop.
+- **Limits**: 200 MB per file; a merge is a full recompute (~8 min), not an incremental
+  append; the Spark cluster must be up for a merge. Contract: `docs/SCHEMA_uploads.md`.
+
 ---
 
 ## 5. Storage — what is on the cluster
 
 | HDFS path | Contents | Size |
 |---|---|---|
-| `/data/raw` | immutable source zone (1 TSV + 50 JSONL, checksummed) | 620.6 MB |
+| `/data/raw` | immutable source zone: 1 Mercari TSV + 50 canonical generated JSONL + 8 console test batches (not part of the union); manual uploads land here too | 682.9 MB (canonical files 650.7 MB) |
 | `/data/processed` | clean_listings (21 cols), entity_resolved (24 cols), chatter_vocab.json | ~787 MB |
 | `/data/curated` | 3 curated analytics tables | ~17.5 MB |
 
@@ -198,9 +246,22 @@ also proves blocks are healthy. Cluster survives full restarts with data intact
    deterministic, seconds of cost, documented in the job header; revisit at ~100x scale.
 5. **Semantic guard** — the learned vocabulary's one hand-written piece: 11 product-line
    suffix tokens that statistics alone would wrongly delete.
-6. **Dashboard** — the ingestion console UI exists but its `/api` routes are not yet
-   implemented, and the Streamlit `graphs.py` still imports missing modules written against
-   a stale schema; wiring it to the real curated tables is the one open deliverable.
+6. **Dashboard** — implemented. The Next.js console now has live telemetry, the pipeline
+   trigger/stop, the streaming log terminal, the Spark cluster panel, the manual-upload
+   panel, HDFS sync and the raw data grid; the analytics page renders KPIs, charts and
+   auto-generated insights from the processed parquet tables, and every `/api/*` route is a
+   thin same-origin proxy to `server.py`. `dashboard/graphs.py` remains dead Streamlit
+   prototype code (it imports `data_loader` and `charts`, which do not exist) and should be
+   pruned rather than wired in.
+7. **Zone hygiene** — the generated zone (local + HDFS) also holds 8 console-trigger test
+   batches (`run=2026_10_05*`, 51,500 rows) whose `listing_id`s collide with the canonical
+   run. The union ignores them: Stage 1 reads only the pinned canonical partition, and
+   `scripts/accept_pipeline.py` mirrors that pin. `logs/validation_report.md` profiles the
+   whole zone, so its generated row count reads 551,500 rather than the canonical 500,000.
+8. **Manual uploads are operator-supplied** — date/location/brand/seller coverage depends
+   entirely on the uploaded file, so upload rows must stay segmented as their own source in
+   every aggregation. A merged run is a deterministic full recompute of the raw zone
+   (minutes), not an incremental append, and it requires the Spark cluster up.
 
 ---
 
@@ -208,8 +269,9 @@ also proves blocks are healthy. Cluster survives full restarts with data intact
 
 **Master reports (start here)**
 - `logs/acceptance_2026_09_29.md` — full acceptance narrative: defects, fixes, parity tables, v3 section, adoption record
-- `logs/validation_report.md` — dual-source profiling; Mercari baselines PASS (brand nulls 42.68% ~ published ~43%; category 0.43% ~ ~0.4%)
-- `logs/acceptance_checks.md` / `logs/acceptance_checks_v3.md` — structural checker output (stage1 9/9, stage2 9/9, stage3 6/6)
+- `logs/validation_report.md` — raw-zone profiling (dual source). With Mercari included, baselines PASS (brand nulls 42.68% ~ published ~43%; category 0.43% ~ ~0.4%). The automated pipeline's Stage 2 runs it with `--skip-mercari` (Mercari is static and checksum-pinned), so pipeline-regenerated copies profile the generated zone only; the file also covers the 8 console test batches that are outside the union (limitation 7)
+- `logs/acceptance_checks.md` — current structural checker output, 24/24 PASS (stage1 9/9 incl. `uploads=0 (expected 0)`, stage2 9/9, stage3 6/6)
+- `logs/acceptance_checks_v3.md` — the v3-adoption snapshot of the same checker
 
 **Grading**
 - `logs/er_report_stage2_v3.md` — final grade (A 0.9802 / B 0.9826 / C 0.9621)
@@ -228,7 +290,7 @@ also proves blocks are healthy. Cluster survives full restarts with data intact
 
 **Storage & cluster**
 - `logs/hdfs_proof.txt` — raw-zone ls / du / fsck (HEALTHY, 0 missing blocks)
-- `logs/hdfs_zone_ingestion.txt` / `logs/hdfs_zone_readback.txt` — processed/curated push + Spark read-back
+- `logs/hdfs_zone_ingestion.txt` / `logs/hdfs_zone_readback.txt` / `logs/hdfs_zone_readback_restore.txt` — processed/curated push + Spark read-back (the `_restore` copy is the post-cleanup rebuild)
 - `logs/ingestion.log` — raw push manifest log; `logs/checksums.txt` — SHA-256 per raw file
 
 **Distributed batch execution (2026-10-05)**
@@ -238,7 +300,7 @@ also proves blocks are healthy. Cluster survives full restarts with data intact
 - `docs/CLUSTER_BATCH_MODE.md` — how to run, size and verify the cluster
 
 **Documentation**
-- `docs/SCHEMA_mercari.md`, `docs/SCHEMA_generated.md`, `docs/SCHEMA_MISMATCHES.md` — contracts
+- `docs/SCHEMA_mercari.md`, `docs/SCHEMA_generated.md`, `docs/SCHEMA_uploads.md`, `docs/SCHEMA_MISMATCHES.md` — source + union contracts
 - `docs/HDFS_SETUP.md` — cluster setup, healthcheck fix, three-zone push/read-back workflow
 - `docs/SPARK_SETUP.md` — Spark execution environment
 - `docs/HANDOFF_Person2.md` — defect/fix detail for the original Stage 2 owner (4c)
@@ -250,7 +312,8 @@ also proves blocks are healthy. Cluster survives full restarts with data intact
 - `scripts/push_to_hdfs.py` / `scripts/push_zones_to_hdfs.py` — raw / zone pushes (fail loudly, no emulation)
 - `scripts/verify_hdfs_zones.py` — Spark read-back proof
 - `scripts/run_stage_in_docker.sh` + `docker/spark/Dockerfile` — execution harness (single-unit and `CLUSTER=1` distributed modes)
-- `server.py` — pipeline orchestration API (:8000) behind the Next.js dashboard; "Start pipeline" auto-detects the standalone cluster and submits Spark stages as driver containers (`resellradar-spark-console-*`), syncs HDFS outputs back before acceptance, and exposes `GET /api/cluster` (workers/running/finished apps); see `docs/CLUSTER_BATCH_MODE.md`
+- `server.py` — pipeline orchestration API (:8000) behind the Next.js dashboard; "Start pipeline" auto-detects the standalone cluster and submits Spark stages as driver containers (`resellradar-spark-console-*`), syncs HDFS outputs back before acceptance, exposes `GET /api/cluster` (workers/running/finished apps), and serves manual ingestion (`POST /api/ingest/upload`, `GET /api/ingest/uploads`) plus analytics aggregates (`GET /api/analytics`); see `docs/CLUSTER_BATCH_MODE.md`
+- `scripts/ingest_uploads.py` + `dashboard/components/UploadPanel.tsx` — manual upload ingestion (normalize/validate into the raw zone; merge rerun with `skip_generation`)
 - `scripts/entity_resolution_lsh_bounded.py` — preserved as-delivered copy (bounded demo) for diffing
 - `scripts/qa_generated.py` — 27/27 generator QA incl. truth-file integrity
 
@@ -270,6 +333,11 @@ python generator/generate_data.py                  # seeded synthetic run
 python scripts/validate_raw.py                     # dual-source profiling gate
 python scripts/qa_generated.py                     # 27/27 generator QA
 python scripts/push_to_hdfs.py --fresh
+
+# optional: manual ingestion (third raw source) — normalizes a batch into data/raw/uploads/
+# and it merges on the next pipeline run (skip_generation mode, e.g. the dashboard's "Ingest & merge")
+python scripts/ingest_uploads.py --file my_batch.csv --source-name demo
+python scripts/push_to_hdfs.py
 
 # pipeline (stages run unmodified in the Spark container)
 python scripts/learn_chatter_vocab.py              # learn chatter vocabulary FIRST
@@ -298,3 +366,7 @@ bash scripts/run_stage_in_docker.sh scripts/verify_hdfs_zones.py
 | `772ed8f` | Learned chatter vocabulary (v3): removability method, per-source vocab, re-grade |
 | `9b74b53` | v3 adopted as canonical `entity_resolution.py`; processed/curated zones landed on HDFS + read-back proof |
 | `68d15f8` | Legacy components pruned (scraper/, server.py, hdfs_uploader.py) |
+| `877ef2b` | Final project report (this document) |
+| `7f93840` | Dashboard/analytics integration: `/api/*` proxy routes + analytics page, Spark cluster panel and `/api/cluster` telemetry, compose `cluster` profile, `docs/CLUSTER_BATCH_MODE.md`, README rewrite |
+| `2d9420b` | Upload feature: `scripts/ingest_uploads.py`, `POST /api/ingest/upload`, `UploadPanel`, Stage-1 uploads union + Hadoop-FS probe, runtime-derived acceptance expectations, `skip_generation` trigger |
+| `a13abe7` | Canonical restore run evidence: acceptance 24/24 with `uploads=0`, regenerated validation report |

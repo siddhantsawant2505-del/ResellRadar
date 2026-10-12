@@ -1,6 +1,6 @@
 ---
 name: ResellRadar Ingestion Console
-description: Data engineering pipeline monitoring dashboard for resale marketplace scraping.
+description: Data engineering pipeline monitoring dashboard for resale marketplace data (real + synthetic + manual uploads).
 colors:
   primary: "#e8a733"
   primary-container: "#c48820"
@@ -66,7 +66,9 @@ components:
 
 ## Overview
 
-ResellRadar is a data engineering dashboard for monitoring a live web scraping pipeline that ingests resale marketplace listings (phones, furniture) from Craigslist, Facebook Marketplace, OfferUp, and eBay Refurbished into an HDFS raw data lake.
+ResellRadar is a data engineering dashboard for monitoring and analysing a resale-marketplace data platform: real Mercari listings, a seeded synthetic generator, and operator-supplied upload batches flow into an HDFS raw zone and through Apache Spark into processed and curated tables.
+
+The console (`/`) is the operational view: live pipeline telemetry, the job controller (start/stop + batch target), a streaming log terminal, the Spark batch-cluster diagram, the manual-ingestion panel, HDFS sync status, and a raw data grid. The analytics page (`/analytics`) is the read-only view: headline KPIs, marketplace charts, and auto-generated insights from the curated parquet tables.
 
 Audience: data engineers. Emotional tone: precise, reliable, authoritative — like an instrument panel. The interface should feel purpose-built and serious, not decorative.
 
@@ -88,9 +90,12 @@ Audience: data engineers. Emotional tone: precise, reliable, authoritative — l
 ## Layout
 
 - Max width 1700px, centered, with 24px gutters on desktop.
-- Two-column top (5/7 split): Job Controller left, Log Terminal right.
+- Anchor nav: Metrics, Controller, Cluster, Upload, HDFS sync, Raw stream (plus a link to the analytics page).
 - Four-column KPI strip.
-- Full-width HDFS panel.
+- Two-column row (5/7 split): Job Controller left, Log Terminal right.
+- Full-width Batch cluster execution diagram (driver → Spark master → worker-unit cards).
+- Full-width Manual ingestion panel (drop target, source label, merge checkbox, recent uploads).
+- Full-width HDFS sync panel.
 - Full-width data grid at bottom.
 
 ## Elevation & Depth
@@ -108,6 +113,8 @@ Flat with border distinction. No box shadows. Surface hierarchy via background c
 - **Buttons:** Primary = amber fill, dark text. Stop = error-tinted border, transparent fill. All buttons have `active:scale(0.97)` press feedback.
 - **Status indicators:** Opacity-only pulse animation.
 - **Log badges:** Lowercase, rounded-sm.
+- **Cluster panel:** One card per Spark worker unit, laid out as an execution-flow diagram (driver → Spark master → workers); live CPU % / memory from `docker stats`, a spinner while a stage is executing, and a FINISHED/FAILED ledger for the run's applications.
+- **Upload panel:** A dashed-border drop zone (`accept=".csv,.tsv,.json,.jsonl"`, 200 MB cap), optional source label, a "merge now" checkbox (default on, warns when the Spark cluster is down), inline result feedback (accepted / rejected / duplicates), and a list of the last 24 h of upload runs.
 - **Modal:** Enters with scale(0.95→1) + opacity, 200ms ease-out.
 
 ## Do's and Don'ts

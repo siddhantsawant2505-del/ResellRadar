@@ -24,6 +24,14 @@ section 4c).
 |---|---|---|
 | Mercari (REAL) | `data/raw/mercari/train.tsv` (TSV, header) | `/data/raw/mercari/train.tsv` (6 blocks) |
 | Generated (SYNTH) | `data/raw/generated/run=2026_09_28T150245Z/` (50 JSONL, 10k rows each) | `/data/raw/generated/run=2026_09_28T150245Z/gen_*.jsonl` (50 blocks) |
+| Uploads (OPERATOR, added 2026-10-05) | `data/raw/uploads/run=<ts>/<label>.jsonl` (+ `ingest_summary.json`) | `/data/raw/uploads/run=<ts>/...` |
+
+Stage 1 (`clean_normalize.py`) unions all three zones. It reads **one canonical generated
+partition** — the `run=` id is pinned inside the job file — so later console-trigger test
+partitions that sit in the generated zone are not part of the union
+(`scripts/accept_pipeline.py` mirrors the same pin when it derives expected counts). The
+uploads zone is optional and probed with the Hadoop FS glob API before reading; its contract
+is `docs/SCHEMA_uploads.md`.
 
 - Cluster: `docker-compose.yml` (apache/hadoop:3, namenode+datanode, replication 1, 64 MB
   blocks). Start: `docker compose -f docker-compose.yml up -d`, then read
@@ -32,7 +40,7 @@ section 4c).
 - Health proof: `logs/hdfs_proof.txt` (ls / du / fsck - all HEALTHY, 0 missing blocks).
   Ingestion log: `logs/ingestion.log`. Integrity: `logs/checksums.txt` (SHA-256 per file).
 
-## 2. What changed vs your current `clean_normalize.py` (MUST migrate)
+## 2. What changed vs the original `clean_normalize.py` (migrated — see 4c)
 
 **Audit verdict (2026-09-28): none of your three jobs can run against the current
 pipeline as-is.** Blockers, in order: (1) Stage 1 reads `data/processed/raw_listings.jsonl`,

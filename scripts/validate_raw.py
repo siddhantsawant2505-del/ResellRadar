@@ -4,6 +4,9 @@ ResellRadar — Task 5: raw-zone validation (Person 1).
 Chunked validation + statistical profiling over the FULL raw zone, per source:
   - data/raw/mercari/train.tsv   (REAL)
   - data/raw/generated/run=*/gen_*.jsonl  (GENERATED)
+Manual uploads (data/raw/uploads/) are validated at ingest time by
+scripts/ingest_uploads.py (title + price required, per-row reasons) and are not
+re-profiled here.
 
 Outputs logs/validation_report.md with: row counts, per-field null rates,
 duplicate rates, price distributions, category splits, structural-gate results,
@@ -334,8 +337,11 @@ def build_report(mp: MercariProfile | None, gp: GeneratedProfile | None,
 
     lines += ["---", "", "## Union notes for Person 2", ""]
     lines.append("See `docs/SCHEMA_MISMATCHES.md`. Reminder: Mercari rows have NULL dates/location;")
-    lines.append("generated rows carry the full 17-column union schema. Duplicate rates are reported")
-    lines.append("per source and must never be pooled.")
+    lines.append("generated rows carry the full 19-field union schema; manual uploads join as an")
+    lines.append("optional third source (`docs/SCHEMA_uploads.md`). Duplicate rates are reported")
+    lines.append("per source and must never be pooled. This report profiles every `run=` partition")
+    lines.append("present in the generated zone; the Spark union reads only the canonical run")
+    lines.append("pinned in `spark_jobs/clean_normalize.py` (`docs/SCHEMA_generated.md`).")
     return "\n".join(lines)
 
 

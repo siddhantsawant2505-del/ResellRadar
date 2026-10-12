@@ -23,8 +23,11 @@
 `posted_date`, `delisted_date`, `location_city`, `location_region`, `seller_type`,
 `currency` (implicit USD), `source_platform` (derived constant `mercari` when unioned).
 
-Any downstream table that joins Mercari with the generated source must add these as
-explicit **NULL** columns for Mercari rows — see `docs/SCHEMA_MISMATCHES.md`.
+Any downstream table that joins Mercari with the other raw sources (the synthetic generator
+and manual uploads) must add these as explicit **NULL** columns for Mercari rows — see
+`docs/SCHEMA_MISMATCHES.md` (union contract) and `docs/SCHEMA_uploads.md` (third source).
+Mercari rows are identifiable downstream by `source_platform = 'mercari'`, the only
+provenance flag in the union.
 
 ## Known quality profile (use as validation baselines)
 

@@ -49,8 +49,10 @@ python scripts/push_to_hdfs.py --fresh        # --fresh: ignore stale sync manif
 - Mode is auto-detected: HDFS CLI via `docker exec` (preferred) → WebHDFS → local `hdfs`.
   The docker-CLI path wins because host-side WebHDFS writes get redirected to the
   datanode's container hostname, which Windows can't resolve.
-- Uploads `data/raw/mercari/` → `/data/raw/mercari/` and
-  `data/raw/generated/run=<ts>/` → `/data/raw/generated/run=<ts>/` (partition preserved).
+- Uploads `data/raw/mercari/` → `/data/raw/mercari/`,
+  `data/raw/generated/run=<ts>/` → `/data/raw/generated/run=<ts>/` and (when present)
+  `data/raw/uploads/run=<ts>/` → `/data/raw/uploads/run=<ts>/` — partitions are preserved
+  on both sides.
 - Every file is logged to `logs/ingestion.log` with record count, bytes, and block count.
 
 ## Capture the proof artifact
@@ -95,8 +97,9 @@ Committed snapshot: `logs/hdfs_zone_readback.txt`. Expected (2026-09-29 run): pr
 1,972,679 rows (clean 21 cols / entity_resolved 24 cols), curated 1,062,905 / 1,105 /
 1,056,069 rows.
 
-Full HDFS tree after all three zone pushes: `/data/raw` (620.6 MB, immutable) →
-`/data/processed` (~787 MB) → `/data/curated` (~17.5 MB).
+Full HDFS tree after all three zone pushes: `/data/raw` (~683 MB, immutable — 650.7 MB of
+canonical files plus the 8 console-trigger test batches that the union ignores; see
+`docs/SCHEMA_generated.md`) → `/data/processed` (~787 MB) → `/data/curated` (~17.5 MB).
 
 ## Stop / reset
 

@@ -139,6 +139,31 @@ one recorded on download day - unchanged.
   (tested: perfect answers score exactly 100%).
 - `docs/PERSON1_TASKS_EXPLAINED.md` - this document.
 
+## Step 9 - Manual uploads (a later addition)
+
+The pipeline also accepts **your own data**. The dashboard has a "Manual ingestion" panel:
+pick a CSV, TSV, JSON or JSONL file (up to 200 MB), optionally give the batch a name, and
+press *Ingest & merge*.
+
+- The file goes through the same checks as the synthetic data: every row needs at least a
+title and a price, condition/shipping values are sanity-checked, and dates that cannot be
+parsed are simply left empty instead of rejecting the row. Column names like `name`,
+`item_description` or `category_name` are translated to the project's field names.
+- Accepted rows are written to `data/raw/uploads/run=<timestamp>/` — the same kind of
+immutable, timestamped partition as the other raw sources — and pushed to HDFS.
+- "Merge" reruns the pipeline without making new synthetic data: the uploaded rows are
+unioned with the two data sources, and all the analysis tables are recomputed from scratch
+(so "merging" always means "rebuild everything including your uploads", never a risky
+in-place edit).
+- Duplicates never reach the analysis tables: a row whose listing id already exists in the
+two original sources (or earlier in the same file) is skipped when you upload, and the
+merge step drops duplicate ids when it unions everything — re-uploading a file cannot
+corrupt the results (it just adds a new timestamped partition).
+- The acceptance checks are upload-aware: they count the rows you uploaded and expect them
+in the output, so the pipeline still proves itself on every run.
+
+The full contract is `docs/SCHEMA_uploads.md`; the feature was added on 2026-10-05.
+
 ---
 
 ## Where everything lives
@@ -151,18 +176,22 @@ one recorded on download day - unchanged.
 | The factory | `generator/generate_data.py` (+ `generator/calibration.py`) |
 | Quality checks | `scripts/validate_raw.py`, `scripts/qa_generated.py` |
 | Warehouse uploader | `scripts/push_to_hdfs.py` + `docker-compose.yml` |
+| Manual uploads | `data/raw/uploads/run=<ts>/` → `hdfs://namenode:9000/data/raw/uploads/` |
+| Pipeline outputs | `data/processed/` + `data/curated/` (also on HDFS) |
 | ER grader | `scripts/evaluate_er.py` |
-| Evidence | `logs/checksums.txt`, `logs/validation_report.md`, `logs/hdfs_proof.txt`, `logs/ingestion.log` |
-| Documents | `docs/SCHEMA_*.md`, `docs/HDFS_SETUP.md`, `docs/HANDOFF_Person2.md` |
+| Evidence | `logs/checksums.txt`, `logs/validation_report.md`, `logs/hdfs_proof.txt`, `logs/ingestion.log`, `logs/acceptance_checks.md` |
+| Documents | `docs/SCHEMA_*.md` (incl. `SCHEMA_uploads.md`), `docs/HDFS_SETUP.md`, `docs/HANDOFF_Person2.md` |
 
-## Status snapshot (2026-09-28)
+## Status snapshot (2026-10-05)
 
 | Metric | Value |
 |---|---|
 | Real rows | 1,482,535 (Mercari, checksum-pinned) |
-| Synthetic rows | 500,000 (+ 500,000-row answer key) |
+| Synthetic rows | 500,000 canonical (+ 500,000-row answer key) |
 | Factory speed | ~51,000 rows/s, ~10 s for a full run, seed 42 |
 | QA checks | 27/27 pass |
 | Validation gate | 0 structural violations across ~2M rows |
-| HDFS | real 2-node (NN+DN) cluster, 51 files / 650.7 MB / 56 blocks, fsck HEALTHY |
+| HDFS | real 2-node (NN+DN) cluster; raw zone ~683 MB incl. the 8 console test batches (canonical 650.7 MB), fsck HEALTHY |
+| Processed / curated | 1,972,679 clean rows; 1,040,681 entities; 3 curated tables — acceptance 24/24 (2026-10-05) |
+| Manual uploads | third raw source live (200 MB/file, dedup on ingest, merge = full recompute) |
 | Planted duplicates | exactly 10.0%, all sharing seller_id, gaps 1-14 days |

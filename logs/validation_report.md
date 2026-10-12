@@ -1,8 +1,63 @@
 # ResellRadar Raw-Zone Validation Report
 
-Generated: 2026-10-05 18:12:35Z  |  Runtime: 13.9s  |  Peak RSS: 163 MB
+Generated: 2026-10-12 11:39:45Z  |  Runtime: 19.6s  |  Peak RSS: 201 MB
 
 ---
+
+## Source 1: Mercari (REAL)
+
+- **Rows**: 1,482,535
+
+### Null rate per field
+
+| Field | Null rate |
+|---|---|
+| train_id | 0.00% |
+| name | 0.00% |
+| item_condition_id | 0.00% |
+| category_name | 0.43% |
+| brand_name | 42.68% |
+| price | 0.00% |
+| shipping | 0.00% |
+| item_description | 0.00% |
+
+- Baseline check: `brand_name` null rate 42.68% (published ~43%, expected band 40%-47%) -> PASS
+- Baseline check: `category_name` null rate 0.43% (published ~0.4%) -> PASS
+
+### Duplicates
+
+- `train_id` uniqueness (range check): PASS
+- Zero-price rows: 874 (0.06%) - documented quality note
+- `[rm]` removed descriptions: 63 (0.00%)
+
+### Price distribution (USD)
+
+- min $0.00 | p1 $3.00 | p25 $10.00 | median $17.00 | p75 $29.00 | p95 $75.00 | p99 $170.00 | max $2,009.00
+
+### Category split (top level)
+
+| Top category | Share |
+|---|---|
+| Women | 44.81% |
+| Beauty | 14.02% |
+| Kids | 11.58% |
+| Electronics | 8.28% |
+| Men | 6.32% |
+| Home | 4.58% |
+| Vintage & Collectibles | 3.14% |
+| Other | 3.06% |
+| Handmade | 2.08% |
+| Sports & Outdoors | 1.71% |
+| <MISSING> | 0.43% |
+
+### Condition / shipping distribution
+
+- condition 1-5: c1=43.21%, c2=25.33%, c3=29.15%, c4=2.16%, c5=0.16%
+- shipping (1=seller pays): 0=55.27%, 1=44.73%
+
+### Structural gate
+
+- violations: 0 -> PASS
 
 ---
 
@@ -91,5 +146,8 @@ Generated: 2026-10-05 18:12:35Z  |  Runtime: 13.9s  |  Peak RSS: 163 MB
 ## Union notes for Person 2
 
 See `docs/SCHEMA_MISMATCHES.md`. Reminder: Mercari rows have NULL dates/location;
-generated rows carry the full 17-column union schema. Duplicate rates are reported
-per source and must never be pooled.
+generated rows carry the full 19-field union schema; manual uploads join as an
+optional third source (`docs/SCHEMA_uploads.md`). Duplicate rates are reported
+per source and must never be pooled. This report profiles every `run=` partition
+present in the generated zone; the Spark union reads only the canonical run
+pinned in `spark_jobs/clean_normalize.py` (`docs/SCHEMA_generated.md`).

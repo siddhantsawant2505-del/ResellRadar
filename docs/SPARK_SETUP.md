@@ -2,222 +2,179 @@
 
 ## 1. Environment Requirements
 
-The Big Data Processing pipeline was developed and tested using:
+The Spark stages are executed **inside a Docker container**, not on the Windows host: the
+job files address `hdfs://namenode:9000`, and only a process on the compose network can
+resolve that hostname, transfer blocks, and write parquet without Windows `winutils`.
 
-| Component | Version |
-| --------- | ------- |
-| Python    | 3.12.2  |
-| PySpark   | 4.2.0   |
-| Java      | 19.0.2  |
-| Hadoop    | 3.5.0   |
+| Component | Where it runs / version |
+| --------- | ----------------------- |
+| Spark | 4.2.0 — image `resellradar/spark:4.2.0-numpy` (stock `apache/spark:4.2.0` + numpy), built from `docker/spark/Dockerfile` |
+| HDFS | `docker compose` NameNode + DataNode (`apache/hadoop:3`), `hdfs://namenode:9000` |
+| Spark Standalone cluster (optional) | compose `cluster` profile: `spark-master` + scalable `spark-worker` units |
+| Python for the host-side scripts | 3.12 (generator, validation, acceptance, ER grading; `pyspark==4.2.0` is in `requirements.txt` for parity) |
 
-The pipeline uses Apache Spark through PySpark.
-
----
-
-## 2. Create Python Virtual Environment
-
-From the project root:
+## 2. Start the storage (and optionally the cluster)
 
 ```powershell
-python -m venv venv
+# HDFS only (single-unit Spark execution)
+docker compose -f docker-compose.yml up -d
+
+# HDFS + Spark Standalone master and 3 worker units (distributed batch mode)
+docker compose -f docker-compose.yml --profile cluster up -d --scale spark-worker=3
 ```
 
-Activate the virtual environment:
+The Spark image is built automatically on first harness use (or explicitly with
+`docker compose build spark-master`).
 
-```powershell
-.\venv\Scripts\Activate.ps1
+## 3. The execution harness
+
+`scripts/run_stage_in_docker.sh` runs an **unmodified** job file inside the Spark image,
+bind-mounting the repo at `/work` and joining the HDFS network:
+
+```bash
+bash scripts/run_stage_in_docker.sh spark_jobs/clean_normalize.py
 ```
 
----
+- Default mode: one driver JVM using `local[*]` (all host cores).
+- `CLUSTER=1 …`: submits the same job to the Standalone cluster, with executors on the
+  worker units reading/writing the HDFS zones (`RR_DATA_ROOT=hdfs://namenode:9000/data`).
+- Knobs: `DRIVER_MEMORY`, `EXECUTOR_MEMORY`, `EXECUTOR_CORES`, `SPARK_MASTER_URL`,
+  `RR_DATA_ROOT`, `SPARK_IMAGE`, `DETACH=1`, `CONTAINER_NAME=…`.
 
-## 3. Install Required Python Packages
+See `docs/CLUSTER_BATCH_MODE.md` for the full distributed-batch guide.
 
-Install PySpark and NumPy:
+## 4. Input dataset
 
-```powershell
-pip install pyspark==4.2.0 numpy
-```
-
-Verify PySpark:
-
-```powershell
-python -c "import pyspark; print(pyspark.__version__)"
-```
-
-Expected:
+The Spark jobs read the raw zones (HDFS by default, or the local `data/` checkout when
+`RR_DATA_ROOT` is unset):
 
 ```text
-4.2.0
+/data/raw/mercari/train.tsv                          # real, 1,482,535 rows
+/data/raw/generated/run=2026_09_28T150245Z/*.jsonl   # synthetic, 500,000 rows (canonical run)
+/data/raw/uploads/run=<ts>/*.jsonl                   # optional operator uploads (third source)
 ```
 
----
+Stage 1 unions all three sources into the 19-field schema
+(`docs/SCHEMA_MISMATCHES.md`); the canonical generated run is pinned inside
+`spark_jobs/clean_normalize.py`, and `docs/SCHEMA_uploads.md` covers the upload zone.
 
-## 4. Java Configuration
+## 5. Run the Big Data Processing Pipeline
 
-Java 19.0.2 is required for the tested environment.
+Run the following from the project root (HDFS stack up).
 
-Set `JAVA_HOME` in PowerShell:
+### Step 0 — learn the ER chatter vocabulary (required before Stage 2)
 
-```powershell
-$env:JAVA_HOME="C:\Program Files\Java\jdk-19"
+```bash
+python scripts/learn_chatter_vocab.py
 ```
-
-Verify Java:
-
-```powershell
-java -version
-```
-
-Expected:
-
-```text
-java version "19.0.2"
-```
-
----
-
-## 5. Windows Hadoop Helper
-
-For Windows, Spark requires Hadoop native helper files for local execution.
-
-The tested setup uses Hadoop 3.5.0 files matching the Hadoop version bundled with PySpark.
-
-Set the Hadoop environment variables:
-
-```powershell
-$env:HADOOP_HOME="C:\path\to\ResellRadar\hadoop"
-$env:HADOOP_COMMON_HOME="C:\path\to\ResellRadar\hadoop"
-$env:PATH="C:\path\to\ResellRadar\hadoop\bin;$env:PATH"
-```
-
-The `hadoop/` directory is intentionally excluded from Git because it contains machine-specific Windows binaries.
-
-Each Windows machine running the Spark pipeline should have its own compatible Hadoop helper setup.
-
----
-
-## 6. Input Dataset
-
-The Spark pipeline expects the cleaned input data to originate from the project's raw listings dataset.
-
-The raw dataset is not committed to Git because of its size.
-
-The project uses:
-
-```text
-data/raw/
-```
-
-for raw JSON data.
-
-The raw JSON array is converted to JSON Lines format before Spark processing:
-
-```text
-data/processed/raw_listings.jsonl
-```
-
----
-
-## 7. Run the Big Data Processing Pipeline
-
-Run the following scripts from the project root.
 
 ### Step 1 — Cleaning and Normalization
 
-```powershell
-python spark_jobs/clean_normalize.py
+```bash
+bash scripts/run_stage_in_docker.sh spark_jobs/clean_normalize.py
 ```
 
 Output:
 
 ```text
-data/processed/clean_listings.parquet
+data/processed/clean_listings.parquet    (1,972,679 rows, 21 columns)
 ```
 
 This step performs:
 
-* Schema normalization
-* Text cleaning
-* Timestamp conversion
-* Null handling
-* Duplicate listing removal
+* Schema normalization (19-field union across the three sources)
+* Text cleaning (`title_clean`, `description_clean`)
+* Timestamp conversion and null handling
+* Duplicate listing removal (`dropDuplicates` on `listing_id`)
 * Parquet conversion
 
 ---
 
 ### Step 2 — Entity Resolution
 
-```powershell
-python spark_jobs/entity_resolution.py
+```bash
+bash scripts/run_stage_in_docker.sh spark_jobs/entity_resolution.py
 ```
 
 Output:
 
 ```text
-data/processed/entity_resolved.parquet
+data/processed/entity_resolved.parquet   (1,972,679 rows, 24 columns)
 ```
 
 This step performs:
 
-* Model/title normalization
-* Removal of non-identifying attributes such as color, storage size and condition phrases
-* MinHash-based similarity matching
-* Entity grouping
-* Entity ID assignment
+* Title tokenization + whitespace normalization
+* Chatter removal using the learned vocabulary (`data/processed/chatter_vocab.json`)
+* Entity keying on the sorted product-token set (storage/colour/model kept)
+* Deterministic entity ID assignment
+* Repost detection + repost → original linking (1–14 day window)
 
-The tested dataset produced:
+The accepted run produced:
 
 ```text
-50,000 listings
-79 unique entities
+1,972,679 listings
+1,040,681 unique entities
+49,788 reposts
+Task A same-product F1 0.9802 (P 1.0000 / R 0.9611)
 ```
 
 ---
 
 ### Step 3 — Feature Engineering
 
-```powershell
-python spark_jobs/feature_engineering.py
+```bash
+bash scripts/run_stage_in_docker.sh spark_jobs/feature_engineering.py
 ```
 
 This generates the curated analytics datasets:
 
 ```text
-data/curated/depreciation_curve_curated.parquet
-data/curated/resale_velocity_curated.parquet
-data/curated/regional_price_variance_curated.parquet
+data/curated/depreciation_curve_curated.parquet          (1,062,905 rows)
+data/curated/resale_velocity_curated.parquet             (1,105 rows)
+data/curated/regional_price_variance_curated.parquet     (1,056,069 rows)
 ```
 
 The generated analytics include:
 
-* Depreciation curves
-* Resale velocity
+* Per-entity depreciation curves (price drift vs the entity's launch-month price)
+* Resale velocity (days from posted to delisted)
 * Regional price variance
 
 ---
 
-## 8. Processing Flow
+## 6. Acceptance / grading
+
+```bash
+python scripts/accept_pipeline.py all --out logs/acceptance_checks.md
+python scripts/evaluate_er.py --pred data/processed/entity_resolved.parquet
+```
+
+`accept_pipeline.py` derives its expected row counts from the raw zone at runtime (so an
+uploaded batch or a rebuild shifts the expectations instead of failing the gate);
+`evaluate_er.py` grades entity resolution against the generator's ground truth.
+
+## 7. Processing Flow
 
 ```text
-Raw Listings
+Raw zones (Mercari + generated + uploads)
      ↓
 Cleaning & Normalization
      ↓
 clean_listings.parquet
      ↓
-Entity Resolution
+Entity Resolution (+ learned chatter vocabulary)
      ↓
 entity_resolved.parquet
      ↓
 Feature Engineering
      ↓
 Curated Analytics Tables
+     ↓
+Acceptance checks + dashboard/analytics consumers
 ```
 
----
-
-## 9. Important Git/Data Note
+## 8. Important Git/Data Note
 
 Generated datasets are intentionally excluded from Git:
 
@@ -227,28 +184,26 @@ data/processed/
 data/curated/
 ```
 
-The repository stores the **processing code**, while datasets should be shared separately through the team's agreed data storage/HDFS setup.
+The repository stores the **processing code**; the datasets are rebuildable artifacts that
+live in the local checkout and on HDFS. Do not commit large raw JSON/TSV files or generated
+Parquet directories to GitHub.
 
-Do not commit large raw JSON files or generated Parquet directories to GitHub.
+## 9. Recommended Run Order for Integration
 
----
+After pulling `main`:
 
-## 10. Recommended Run Order for Integration
-
-After pulling the Big Data Processing branch:
-
-```powershell
-git pull
+```bash
+docker compose -f docker-compose.yml --profile cluster up -d --scale spark-worker=3
+python scripts/learn_chatter_vocab.py
+bash scripts/run_stage_in_docker.sh spark_jobs/clean_normalize.py
+bash scripts/run_stage_in_docker.sh spark_jobs/entity_resolution.py
+bash scripts/run_stage_in_docker.sh spark_jobs/feature_engineering.py
+python scripts/accept_pipeline.py all --out logs/acceptance_checks.md
 ```
 
-Install the required environment and configure Java/Hadoop.
+Or click **Start pipeline** on the dashboard (`http://localhost:3000`) to run the whole
+sequence, distributed automatically when the cluster profile is up.
 
-Then run:
-
-```powershell
-python spark_jobs/clean_normalize.py
-python spark_jobs/entity_resolution.py
-python spark_jobs/feature_engineering.py
-```
-
-After successful execution, the curated Parquet datasets can be consumed by the project's downstream analytics/dashboard components.
+After successful execution the curated Parquet datasets can be consumed by the project's
+downstream analytics/dashboard components (the Next.js analytics page reads them through
+the FastAPI `/api/analytics` endpoint).

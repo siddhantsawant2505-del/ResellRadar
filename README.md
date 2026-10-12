@@ -67,7 +67,7 @@ This repository is not a single script; it is a small data platform with several
 - `scripts/qa_generated.py`: 27-check QA suite for the generator, including truth-file integrity.
 - `scripts/push_to_hdfs.py`: pushes un-synced raw files into the HDFS raw zone and maintains `data/hdfs_sync_manifest.json`.
 - `scripts/push_zones_to_hdfs.py`: lands the processed/curated parquet zones on HDFS.
-- `scripts/ingest_uploads.py`: manual ingestion — normalizes an uploaded CSV/TSV/JSON/JSONL into the 19-field union schema and stores it as `data/raw/uploads/run=<ts>/*.jsonl` (title + price required per row; existing `listing_id`s are skipped so re-uploads never duplicate).
+- `scripts/ingest_uploads.py`: manual ingestion — normalizes an uploaded CSV/TSV/JSON/JSONL into the 19-field union schema and stores it as `data/raw/uploads/run=<ts>/*.jsonl` (title + price required per row; `listing_id`s already in the Mercari/generated corpus are skipped, and Stage 4 dedupes by `listing_id`, so re-uploads never duplicate the processed corpus).
 - `server.py`: FastAPI service exposing job control, status, logs, HDFS sync, cluster telemetry, analytics aggregates, and preview endpoints.
 
 ### 2. Spark processing pipeline
@@ -102,6 +102,8 @@ The Spark jobs read `SPARK_MASTER` (falling back to `local[*]`) and `RR_DATA_ROO
 ## Verified results (canonical run)
 
 Raw 1,982,535 → clean **1,972,679** rows (Mercari 1,482,535 + generated 490,144), **1,040,681** product entities, **49,788** reposts, curated tables **1,062,905 / 1,105 / 1,056,069** rows; acceptance checks 24/24 PASS (`logs/acceptance_checks.md`). Identical counts are reproduced in distributed mode — see `docs/CLUSTER_BATCH_MODE.md`.
+
+The manual-upload path is verified end-to-end as well: an uploaded batch flows ingest → raw zone → HDFS → Stage 4 union → processed tables, and the acceptance gate reports `uploads=N (expected N)` for the run. The committed evidence above is the canonical corpus with `uploads=0 (expected 0)`; the upload contract is `docs/SCHEMA_uploads.md`.
 
 ---
 
@@ -146,8 +148,11 @@ ResellRadar/
 │   ├── entity_resolution.py
 │   └── feature_engineering.py
 ├── .gitignore
+├── DESIGN.md                     # console design system (tokens + component rules)
+├── Tasks to perform.md           # Person 1 task plan + status
 ├── docker-compose.yml
 ├── requirements.txt
+├── run_system.bat / run_system.ps1  # one-click launcher (backend + dashboard)
 ├── server.py
 └── README.md
 ```
@@ -215,11 +220,13 @@ python scripts/evaluate_er.py --pred data/processed/entity_resolved.parquet
 
 ### One-click path
 
-Alternatively, click **Start pipeline** on the dashboard (`http://localhost:3000`): it runs generation → validation → HDFS push → Spark stages (distributed automatically when the cluster profile is up, with outputs synced back from HDFS before acceptance) → acceptance checks, streaming progress into the log terminal and the cluster panel.
+Alternatively, click **Start pipeline** on the dashboard (`http://localhost:3000`): it runs generation → validation → HDFS push → Spark stages (distributed automatically when the cluster profile is up, with outputs synced back from HDFS before acceptance) → acceptance checks, streaming progress into the log terminal and the cluster panel. The trigger accepts `skip_generation: true` for a rebuild-from-raw-zone run (no new synthetic batches), which is exactly what the manual-upload merge uses.
+
+On Windows, `run_system.bat` (or `run_system.ps1`) launches both the backend and the dashboard in one double-click.
 
 ### Manual upload path
 
-To add your own data, use the **Manual ingestion** panel on the console: pick a CSV/TSV/JSON/JSONL file (each row needs at least `title` and `price`; a header alias map handles `name`/`item_description`/`category_name`-style columns), optionally label the batch, and hit **Ingest & merge**. The file is normalized into `data/raw/uploads/run=<ts>/`, pushed to the HDFS raw zone, and unioned into the Spark stages on the rerun — the acceptance gate derives its expected counts from the raw zone, so merged runs stay fully verified. Uploads never duplicate: rows whose `listing_id` already exists in the raw zone are skipped.
+To add your own data, use the **Manual ingestion** panel on the console: pick a CSV/TSV/JSON/JSONL file (each row needs at least `title` and `price`; a header alias map handles `name`/`item_description`/`category_name`-style columns), optionally label the batch, and hit **Ingest & merge**. The file is normalized into `data/raw/uploads/run=<ts>/`, pushed to the HDFS raw zone, and unioned into the Spark stages on the rerun — the acceptance gate derives its expected counts from the raw zone, so merged runs stay fully verified. Uploads never duplicate the processed corpus: rows whose `listing_id` already exists in the Mercari/generated zones (or earlier in the batch) are skipped at ingest, and Stage 4's `dropDuplicates(["listing_id"])` removes repeats across upload runs when the zones are unioned.
 
 ---
 
@@ -336,5 +343,7 @@ For environment-specific steps and deeper operational notes, see:
 - `docs/SPARK_SETUP.md`
 - `docs/CLUSTER_BATCH_MODE.md` — distributed batch processing and the dashboard trigger integration
 - `docs/FINAL_REPORT.md` — results, evidence index, and reproduction steps
+- `docs/SCHEMA_mercari.md` / `docs/SCHEMA_generated.md` / `docs/SCHEMA_uploads.md` — raw source contracts
+- `docs/SCHEMA_MISMATCHES.md` — the three-source union contract
 - `README_PERSON2.md`
 - `DESIGN.md`

@@ -5,6 +5,12 @@
 **Format**: JSON Lines, UTF-8, 10,000 records per file
 **Reproducibility**: fixed RNG seed (`SEED = 42` in the generator); batches are deterministic
 for a given generator version. Files are never overwritten — a new code version means a new run partition.
+**Union run**: Stage 1 reads ONE canonical partition, pinned in `spark_jobs/clean_normalize.py`
+(`run=2026_09_28T150245Z` — the 50 files / 500,000 rows below). Extra `run=` partitions that
+console-triggered test runs left in the zone/HDFS are **not** part of the union; they are
+ignored by the Spark job and by `scripts/accept_pipeline.py`, which parses the same pin out
+of the job file. `logs/validation_report.md` profiles the whole zone, so its generated row
+count can exceed the canonical 500,000.
 
 This source exists to supply what Mercari lacks (dates, location) and to carry the
 required messiness. Products, brands, and price levels are seeded from the real

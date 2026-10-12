@@ -34,11 +34,30 @@ HDFS, with documentation, checksums, and full-data validation.
 6. Smoke test at 10k rows, then full scale; record runtime + memory.
 7. (LAST, out of scope for now) Stitch-generated ingestion control panel wired to real scripts.
 
-## Legacy (pre-v3) components
-- `scraper/` (Scrapy spider + old generator), `hdfs_uploader.py`, `server.py`, `dashboard/`,
-  old `README.md` — superseded; kept until the UI task replaces them. See README_PERSON1_NEXT_STEPS.md.
+## Status update (2026-10-05)
 
-## Cross-team note (send to Person 2 NOW)
-The raw contract changes: per-source JSONL (Mercari TSV or converted JSONL + generated JSONL),
-new `price_raw` field, nullable dates/location in Mercari rows. `spark_jobs/clean_normalize.py`
-has a 14-field non-nullable StructType and a hardcoded JSONL path that must be migrated.
+- Tasks 0-6: complete (download → seed sample → schemas → generator → HDFS push → dual-source
+  validation → full-scale run), plus the quality gates (`qa_generated.py` 27/27, structural
+  gate 0 violations, checksum seals).
+- Task 7 (UI): complete and beyond — `server.py` orchestrates the full pipeline (:8000) and
+  `dashboard/` is the Next.js ingestion console + analytics page, both in active use.
+- Pipeline accepted end-to-end: 1,982,535 raw → 1,972,679 clean → 1,040,681 entities /
+  49,788 reposts → curated 1,062,905 / 1,105 / 1,056,069; acceptance **24/24**
+  (`logs/acceptance_checks.md`); distributed batch mode verified on the Spark Standalone
+  cluster (`docs/CLUSTER_BATCH_MODE.md`).
+- Added after v3: **manual upload ingestion** as a third raw source — console "Manual
+  ingestion" panel, `scripts/ingest_uploads.py`, merge = skip-generation pipeline rerun
+  (`docs/SCHEMA_uploads.md`).
+
+## Legacy (pre-v3) components
+- `scraper/` (Scrapy spider + old generator) and `hdfs_uploader.py` — superseded (the
+  Mercari dataset replaced scraping); parked in git history / the local archive.
+- `server.py` and `dashboard/` — **no longer legacy**: they were rebuilt as the FastAPI
+  orchestration API and the Next.js console/analytics UI (task 7 above is complete).
+
+## Cross-team note (addressed 2026-09-29)
+The raw contract changes — per-source files (Mercari TSV + generated JSONL + optional
+uploads JSONL), new `price_raw` field, nullable dates/location in Mercari rows — were
+migrated: `spark_jobs/clean_normalize.py` now reads the TSV/JSONL paths with the 19-field
+nullable union schema. Full defect/fix trail: `docs/HANDOFF_Person2.md`;
+results: `docs/FINAL_REPORT.md`.
